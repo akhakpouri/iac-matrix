@@ -23,8 +23,8 @@ data "aws_ami" "ubuntu" {
 
 resource "aws_instance" "app_server" {
   ami           = data.aws_ami.ubuntu.id
-  instance_type = "t2.micro"
+  instance_type = var.instance_type
   tags = {
-    Name = "learning-terraform"
+    Name = var.instance_name
   }
 }
