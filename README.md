@@ -21,6 +21,7 @@ This project uses Terraform to automate the deployment of a complete AWS infrast
 
 ## Project Structure
 
+```
 aws/
 ├── main.tf # Main configuration and module definitions
 ├── variables.tf # Input variables
@@ -31,6 +32,7 @@ aws/
 ├── ec2-instance/ # EC2 instance module
 ├── s3-bucket/ # S3 bucket module
 └── vpc/ # VPC module (via external registry)
+```
 
 ## Input Variables
 
