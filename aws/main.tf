@@ -6,6 +6,10 @@ provider "random" {
 
 }
 
+provider "time" {
+
+}
+
 data "aws_ami" "ubuntu" {
   most_recent = true
 
@@ -30,6 +34,10 @@ module "ec2-instance" {
   source        = "./modules/ec2-instance"
   ami_id        = data.aws_ami.ubuntu.id
   instance_name = random_pet.instance.id
+}
+
+module "s3-instance" {
+  source = "./modules/s3-bucket"
 }
 
 module "hello" {
