@@ -72,3 +72,9 @@ variable "resource_tags" {
     "environment" = "dev"
   }
 }
+
+variable "db_password" {
+  description = "Db password"
+  type        = string
+  sensitive   = true
+}

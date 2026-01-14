@@ -44,14 +44,6 @@ module "vpc" {
   enable_vpn_gateway   = var.enable_vpn_gateway
 }
 
-module "ec2-instance" {
-  source         = "./modules/ec2-instance"
-  depends_on     = [module.vpc]
-  ami_id         = data.aws_ami.ubuntu.id
-  instance_name  = random_pet.instance.id
-  instance_count = 2
-}
-
 module "s3-instance" {
   source = "./modules/s3-bucket"
 }
@@ -64,4 +56,9 @@ module "hello" {
     second_hello = "world"
   }
   some_key = var.secret_key
+}
+
+module "rds" {
+  source      = "./modules/rds"
+  db_password = var.db_password
 }

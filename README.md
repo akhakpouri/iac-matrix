@@ -1,12 +1,13 @@
 # Infrastructure Code - Project Matrix
 
-A Terraform infrastructure-as-code project that provisions AWS resources including VPC, EC2 instances, and S3 buckets.
+A Terraform infrastructure-as-code project that provisions AWS resources including VPC, EC2 instances, RDS database, and S3 buckets.
 
 ## Overview
 
 This project uses Terraform to automate the deployment of a complete AWS infrastructure setup with:
 - **VPC** with configurable public and private subnets
 - **EC2 Instances** for application servers
+- **RDS Database** PostgreSQL instance for data persistence
 - **S3 Bucket** for object storage
 - **Security Groups** and networking configuration
 
@@ -31,7 +32,8 @@ aws/
 └── modules/
 ├── ec2-instance/ # EC2 instance module
 ├── s3-bucket/ # S3 bucket module
-└── vpc/ # VPC module (via external registry)
+├── vpc/ # VPC module (via external registry)
+└── rds/ # RDS database module
 ```
 
 ## Input Variables
@@ -60,6 +62,14 @@ aws/
 |----------|------|---------|-------------|
 | `instance_count` | number | `2` | Number of EC2 instances to provision |
 
+### RDS Configuration
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `vpc_cidr_block` | string | `10.1.0.0/16` | CIDR block for the RDS VPC |
+| `public_subnet_rds_cidr_blocks` | list(string) | `["10.1.1.0/24", "10.1.2.0/24"]` | CIDR blocks for RDS public subnets |
+| `db_password` | string | — | Master password for RDS database (required, sensitive) |
+
 ### Tagging
 
 | Variable | Type | Default | Description |
@@ -71,8 +81,10 @@ aws/
 | Output | Description |
 |--------|-------------|
 | `s3_bucket_name` | The name of the provisioned S3 bucket |
-| `app_server_count` | Count of app servers provisioned |
 | `instance_hostname` | The private DNS name of the web server instance |
+| `rds_endpoint` | The connection endpoint for the RDS database instance |
+| `rds_instance_id` | The identifier of the RDS database instance |
+| `rds_database_name` | The database name (postgres) |
 
 ## Configuration
 
@@ -86,12 +98,15 @@ To use Terraform Cloud, ensure you have authentication configured:
 ```sh
 terraform login
 ```
+
 ## Usage
+
 Initialize Terraform
 ```sh
 cd aws
 terraform init
 ```
+
 Plan & apply infrastructure
 ```sh
 terraform plan
