@@ -36,7 +36,8 @@ module "hello" {
   source  = "joatmon08/hello/random"
   version = "6.0.0"
   hellos = {
-    hello = random_pet.dog.id
+    hello        = random_pet.instance.id
+    second_hello = "world"
   }
-  some_key = "some_value"
+  some_key = var.secret_key
 }
