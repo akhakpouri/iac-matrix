@@ -2,7 +2,7 @@ data "aws_availability_zones" "availability_zones" {}
 
 module "rds_vcp" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "6.0.0"
+  version = "6.6.0"
 
   name                 = "rds-vpc"
   cidr                 = var.vpc_cidr_block
@@ -22,7 +22,7 @@ resource "aws_db_subnet_group" "rds_subnet_group" {
 }
 
 resource "aws_security_group" "rds" {
-  name   = "education_rds"
+  name   = "${var.instance_name}-sg"
   vpc_id = module.rds_vcp.vpc_id
 
   ingress {
@@ -40,12 +40,12 @@ resource "aws_security_group" "rds" {
   }
 
   tags = {
-    Name = "education_rds"
+    Name = "${var.instance_name}"
   }
 }
 
 resource "aws_db_parameter_group" "education" {
-  name   = "education"
+  name   = var.instance_name
   family = "postgres17"
 
   parameter {
@@ -55,7 +55,7 @@ resource "aws_db_parameter_group" "education" {
 }
 
 resource "aws_db_instance" "rds_instance" {
-  identifier             = "education-rds-instance"
+  identifier             = var.instance_name
   instance_class         = "db.t3.micro"
   allocated_storage      = 5
   engine                 = "postgres"

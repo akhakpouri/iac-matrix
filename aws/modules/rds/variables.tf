@@ -1,3 +1,9 @@
+variable "instance_name" {
+  type        = string
+  description = "Instance name of the rds"
+  default     = "main-rds-instance"
+}
+
 variable "vpc_cidr_block" {
   type        = string
   description = "CIDR block for the RDS VPC"
