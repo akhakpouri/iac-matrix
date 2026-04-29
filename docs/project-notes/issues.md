@@ -62,17 +62,33 @@ Provision and manage the Auth0 tenant for the commerce-api ecosystem. Single sou
 - [x] Bootstrap "Terraform" Management API client created manually in dashboard with required scopes
 - [x] TFC backend wired (`auth0/terraform.tf`, workspace `auth0` under org `akhakpouri`)
 - [x] Sensitive variables (`domain`, `client_id`, `client_secret`) configured as TFC workspace variables
-- [ ] `auth0/modules/api/` — wraps `auth0_resource_server` + `auth0_resource_server_scopes`
-- [ ] Resource server: commerce-api (audience identifier, RS256, scopes)
-- [ ] Universal Login defaults (`auth0_branding`, `auth0_prompt`)
-- [ ] Root `main.tf` — composes `module "commerce_api"` + branding/prompt
-- [ ] `outputs.tf` — commerce-api audience + scope names
-- [ ] Document bootstrap + plan/apply workflow (`auth0/CLAUDE.md` already drafted)
+- [x] `auth0/modules/api/` exists with `auth0_resource_server` + `auth0_resource_server_scopes` (hardcoded — see structural issues below)
+- [x] Resource server: commerce-api applied (audience `commerce-api-server`, RS256, 9 scopes across orders/products/users × read/write/delete)
+- [x] Universal Login defaults applied (currently inside `modules/api/commerce.tf` — see structural issues)
+- [x] Root `main.tf` composes `module "commerce_api"`
+- [x] `outputs.tf` at root (`commerce_api_audience`, `commerce_api_scopes`) and at module level (`audience`, `name`, `scope_names`)
+- [x] Bootstrap + workflow documented in `auth0/CLAUDE.md` (refreshed for TFC workflow 2026-04-29)
+
+### Known structural issues — to address before merge or via follow-up
+
+These work today but block #7 / are sloppy enough to fix:
+
+1. **`auth0_branding` + `auth0_prompt` are inside `modules/api/commerce.tf`.** Tenant singletons — second instantiation of the module (i.e. financial-tracker in #7) will conflict. Move to root (`auth0/main.tf` or `auth0/branding.tf`).
+2. **`modules/api/` hardcodes commerce-specific values** (resource block names, identifier, scope list). Module is not reusable — needs `name`, `identifier`, and `scopes` as input variables, and resource references inside the module need to use generic local names.
+3. **`token_lifetime = 84600`** in `commerce.tf` is almost certainly a typo for `86400` (24h, the Auth0 default). 84600 = 23h 30m, an odd value to choose intentionally.
+4. **`identifier = "commerce-api-server"`** is a bare slug. Auth0 / OAuth convention is a URI (e.g. `https://commerce-api.akhakpouri.dev/`). Not strictly broken, but renaming after launch requires recreating the resource server and reissuing all tokens — worth fixing while no consumer is validating tokens yet.
+
+### Pending before close
+
+- Decide: fix structural issues in this PR vs. open a small follow-up issue for them
+- Commit the staged changes + branch tip work
+- Open PR + merge
+- Then close #6
 
 ### Open questions
 
-- Final scope vocabulary for commerce-api — pending route-classification work in commerce-api repo
-- Real audience URI (currently `https://api.commerce-api.example` placeholder)
+- Final scope vocabulary for commerce-api — current 9 scopes (orders/products/users × CRUD-ish) are a reasonable first pass but still pending route-classification work in commerce-api repo
+- Real audience URI (currently `commerce-api-server` slug — see structural issue #4)
 - Env strategy: single workspace for now; prod tenant requires its own bootstrap and workspace when it exists
 
 ### Out of scope

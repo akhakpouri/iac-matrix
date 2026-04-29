@@ -19,7 +19,9 @@ terraform plan
 terraform apply
 ```
 
-`secrets.auto.tfvars` is gitignored (`*.tfvars` rule in root `.gitignore`). Terraform only auto-loads `terraform.tfvars` and `*.auto.tfvars` — anything else needs `-var-file`. Renaming to `secrets.auto.tfvars` removes the flag.
+Variables (`domain`, `client_id`, `client_secret`) are stored as **workspace variables in TFC** under workspace `auth0` (org `akhakpouri`); `client_id` and `client_secret` are marked sensitive. Both local and remote runs read from the workspace — there are no committed `.tfvars` files. `terraform login` is a one-time setup so the CLI can authenticate to TFC; after that, `plan` / `apply` execute remotely on TFC's runners and stream output back to your terminal.
+
+If you need to add a fourth variable, declare it in `auth0/variable.tf` first, then set its value in the TFC workspace UI before the next plan — TFC will fail the plan if a non-defaulted variable is unset.
 
 ## Module structure
 

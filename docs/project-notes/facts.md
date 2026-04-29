@@ -73,24 +73,37 @@ Sensitive variables (`auth0_client_id`, `auth0_client_secret`, and `domain` for 
 - `var.client_id` — Management API client ID for the bootstrap app
 - `var.client_secret` — Management API client secret for the bootstrap app (sensitive)
 
-### Module shape (planned — see ADR-002)
+### Module shape (target — see ADR-002)
 
-| Module | Wraps | Per-instance |
-|--------|-------|--------------|
-| `modules/api/` | `auth0_resource_server` + `auth0_resource_server_scopes` | One per API |
-| `modules/spa-client/` | `auth0_client` (spa) + `auth0_client_credentials` (none) | One per frontend |
-| `modules/m2m-client/` | `auth0_client` (m2m) + `auth0_client_credentials` + `auth0_client_grant` | One per consumer |
+| Module | Wraps | Per-instance | Current state |
+|--------|-------|--------------|---------------|
+| `modules/api/` | `auth0_resource_server` + `auth0_resource_server_scopes` | One per API | Built but **hardcoded for commerce-api** — not reusable yet. Needs `name` / `identifier` / `scopes` as inputs before #7. Branding + prompt singletons currently live inside this module by mistake (will conflict on second instantiation). |
+| `modules/spa-client/` | `auth0_client` (spa) + `auth0_client_credentials` (none) | One per frontend | Not built (#8) |
+| `modules/m2m-client/` | `auth0_client` (m2m) + `auth0_client_credentials` + `auth0_client_grant` | One per consumer | Not built (#9) |
 
-### Planned APIs
+### APIs
 
-| API | Audience identifier (placeholder) | Notes |
-|-----|------------------------------------|-------|
-| commerce-api | `https://api.commerce-api.example` (TBD) | Issue #6 — initial scopes pending route classification |
-| financial-tracker-api | TBD | Issue #6 follow-up |
+| API | Status | Audience identifier | Scopes |
+|-----|--------|---------------------|--------|
+| commerce-api | Applied (#6) — dashboard name `Commerce Api Server` | `commerce-api-server` (bare slug — URI form recommended; Auth0 won't let you change `identifier` in place, so renaming requires recreate + token reissue) | `orders:{read,write,delete}`, `products:{read,write,delete}`, `users:{read,write,delete}` |
+| financial-tracker-api | Planned (#7) — blocked on `modules/api/` parameterization | TBD | TBD |
 
-### Planned frontend SPAs
+### Frontend SPAs
 
-| App | Notes |
-|-----|-------|
-| Storefront SPA | Public client, PKCE |
-| Admin SPA | Public client, PKCE |
+| App | Status | Notes |
+|-----|--------|-------|
+| Storefront SPA | Planned (#8) — blocked on first frontend repo | Public client, PKCE |
+| Admin SPA | Planned (#8) — blocked on first frontend repo | Public client, PKCE |
+
+### Tenant-level config (applied)
+
+- **Universal Login**: `new` experience, identifier-first
+- **Branding**: primary `#0059ff`, page background `#f4f4f4`, placeholder logo from Auth0 marketplace CDN
+- **Caveat**: `auth0_branding` and `auth0_prompt` currently live in `auth0/modules/api/commerce.tf` rather than at the tenant root — known structural issue tracked in #6's "Known structural issues" section.
+
+### Root outputs
+
+| Output | Source |
+|--------|--------|
+| `commerce_api_audience` | `module.commerce_api.audience` |
+| `commerce_api_scopes` | `module.commerce_api.scope_names` |
