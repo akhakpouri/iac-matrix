@@ -1,16 +1,15 @@
 variable "client_id" {
-    type = string
-    description = "Auth0 client-id"
+  type        = string
+  description = "Auth0 client-id"
 }
 
 variable "domain" {
-  type = string
+  type        = string
   description = "Auth0 domain!"
-  default = "value"
 }
 
 variable "client_secret" {
-  type = string
+  type        = string
   description = "Auth0 client secret"
-  sensitive = true
+  sensitive   = true
 }

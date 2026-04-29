@@ -14,9 +14,10 @@ See ADR-001 for the per-provider split rationale.
 | Key          | Value                  |
 |--------------|------------------------|
 | Organization | `akhakpouri`           |
-| Project      | `Learn Terrafom`       |
-| `aws/` workspace   | `learn-terraform-aws`   |
-| `auth0/` workspace | `learn-terraform-auth0` (planned — not yet wired into `auth0/terraform.tf`) |
+| `aws/` workspace   | `learn-terraform-aws` (project: `Learn Terrafom`) |
+| `auth0/` workspace | `auth0` (no project — sits ungrouped under the org) |
+
+Sensitive variables (`auth0_client_id`, `auth0_client_secret`, and `domain` for the auth0 workspace; `secret_key`, `db_password` for the aws workspace) are stored as workspace variables in TFC, not in committed `.tfvars` files.
 
 ## Required versions
 
@@ -62,14 +63,15 @@ See ADR-001 for the per-provider split rationale.
 
 | Key | Value |
 |-----|-------|
-| Tenant domain | (set per environment via `var.auth0_domain`) |
+| Tenant domain | Supplied via TFC workspace variable `domain` |
 | Bootstrap app | "Terraform" — manually created, see ADR-003 |
 | Management API scopes (bootstrap) | `read:*` / `create:*` / `update:*` for: `resource_servers`, `clients`, `client_grants`, `branding`, `prompts` |
 
-### Sensitive variables (no defaults — must be supplied)
+### Variables (declared in `auth0/variable.tf`, supplied via TFC workspace vars)
 
-- `var.auth0_client_id` — Management API client ID for the bootstrap app
-- `var.auth0_client_secret` — Management API client secret for the bootstrap app
+- `var.domain` — tenant domain (e.g. `your-tenant.us.auth0.com`)
+- `var.client_id` — Management API client ID for the bootstrap app
+- `var.client_secret` — Management API client secret for the bootstrap app (sensitive)
 
 ### Module shape (planned — see ADR-002)
 

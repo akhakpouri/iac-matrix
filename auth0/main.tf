@@ -1,3 +1,3 @@
-provider "auth0" {
-
+module "commerce_api" {
+  source = "./modules/api"
 }
