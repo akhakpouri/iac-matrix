@@ -1,4 +1,4 @@
-resource "auth0_resource_server" "respource_server" {
+resource "auth0_resource_server" "resource_server" {
   name                 = var.name
   identifier           = var.identifier
   signing_alg          = var.signing_alg
@@ -7,7 +7,7 @@ resource "auth0_resource_server" "respource_server" {
 }
 
 resource "auth0_resource_server_scopes" "resource_server_scopes" {
-  resource_server_identifier = auth0_resource_server.respource_server.identifier
+  resource_server_identifier = auth0_resource_server.resource_server.identifier
 
   dynamic "scopes" {
     for_each = var.scopes
