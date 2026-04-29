@@ -77,7 +77,7 @@ Sensitive variables (`auth0_client_id`, `auth0_client_secret`, and `domain` for 
 
 | Module | Wraps | Per-instance | Current state |
 |--------|-------|--------------|---------------|
-| `modules/api/` | `auth0_resource_server` + `auth0_resource_server_scopes` | One per API | Built but **hardcoded for commerce-api** — not reusable yet. Needs `name` / `identifier` / `scopes` as inputs before #7. Branding + prompt singletons currently live inside this module by mistake (will conflict on second instantiation). |
+| `modules/api/` | `auth0_resource_server` + `auth0_resource_server_scopes` | One per API | Parameterized — accepts `name`, `identifier`, `scopes` (required) plus `signing_alg`, `token_lifetime`, `allow_offline_access` (defaulted). Used by commerce-api today; ready for #7. |
 | `modules/spa-client/` | `auth0_client` (spa) + `auth0_client_credentials` (none) | One per frontend | Not built (#8) |
 | `modules/m2m-client/` | `auth0_client` (m2m) + `auth0_client_credentials` + `auth0_client_grant` | One per consumer | Not built (#9) |
 
@@ -99,7 +99,7 @@ Sensitive variables (`auth0_client_id`, `auth0_client_secret`, and `domain` for 
 
 - **Universal Login**: `new` experience, identifier-first
 - **Branding**: primary `#0059ff`, page background `#f4f4f4`, placeholder logo from Auth0 marketplace CDN
-- **Caveat**: `auth0_branding` and `auth0_prompt` currently live in `auth0/modules/api/commerce.tf` rather than at the tenant root — known structural issue tracked in #6's "Known structural issues" section.
+- Block names: `auth0_branding.default_branding`, `auth0_prompt.default_prompt`
 
 ### Root outputs
 
