@@ -2,49 +2,30 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Commands
+## Overview
 
-All Terraform commands run from the `aws/` directory.
+`matrix` holds Terraform-managed infrastructure for the multi-product ecosystem (currently `commerce-api`, with `financial-tracker-api` planned). Two top-level domains live side by side:
 
-```sh
-cd aws
-terraform init        # initialize backend & download providers/modules
-terraform fmt         # format .tf files
-terraform validate    # validate configuration
-terraform plan
-terraform apply
-terraform destroy
-```
+| Path | Purpose |
+|------|---------|
+| `auth0/` | Auth0 tenant configuration — API resource servers (audiences), per-API scopes, SPA + M2M clients. Provider: `auth0/auth0`. See `auth0/CLAUDE.md`. |
+| `aws/` | AWS infrastructure — VPC, RDS, S3, and per-product compute (e.g. ECS Fargate for commerce-api). See `aws/CLAUDE.md`. |
 
-This project uses a **Terraform Cloud** remote backend (org `akhakpouri`, workspace `learn-terraform-aws`). `plan`/`apply` execute remotely, so variables marked `sensitive` must be set in the workspace UI or via `terraform.tfvars` (gitignored). `terraform login` is required before `init`.
+The two domains are operationally independent — separate Terraform Cloud workspaces, no shared state, no resource references across them. The runtime services in their respective product repos are the glue: each one validates JWTs issued by Auth0 and reads/writes the RDS managed under `aws/`.
 
-Required: Terraform >= 1.14.0.
+## Backend & secrets
 
-## Architecture
+- Remote backend: **Terraform Cloud**, organization `akhakpouri`. Each top-level module is its own workspace (`auth0`, `learn-terraform-aws`, and any future per-product workspaces); `plan` / `apply` execute remotely. Run `terraform login` once before `init` anywhere.
+- Sensitive vars (Auth0 client secrets, DB passwords, future cloud creds) live as workspace variables in TFC or in gitignored `*.tfvars` / `*.auto.tfvars` files. **Never commit any `.tfvars` file.** Never echo secrets into logs, PR descriptions, or terminal output.
+- Required: Terraform >= 1.14.0.
 
-The root module lives in `aws/` and composes four pieces:
+## Working in this repo
 
-1. **`module.vpc`** — external `terraform-aws-modules/vpc/aws` (v6.6.0). The "main" application VPC, with public/private subnets sliced from `public_subnet_cidr_blocks` / `private_subnet_cidr_blocks` by the `*_subnet_count` vars.
-2. **`module.s3-instance`** → `./modules/s3-bucket` — bucket name is suffixed with the AWS account ID (via `aws_caller_identity`) to keep it globally unique.
-3. **`module.hello`** — external `joatmon08/hello/random` (v6.0.0). Consumes `var.secret_key` and a `random_pet` id; not infrastructure, just a demo module.
-4. **`module.rds`** → `./modules/rds` — PostgreSQL 17 RDS instance.
+- Each module has its own `CLAUDE.md` with commands, architecture, and quirks specific to its domain. Read it before touching unfamiliar territory.
+- External modules are pinned by `version` at every reference. Maintain that discipline when adding new ones.
+- Resource tagging is currently ad-hoc per module — no central tagging convention yet.
+- **Cross-repo coupling:** scope names defined in `auth0/` (audiences, scope strings) must match what consuming services expect at runtime. For commerce-api specifically, scope spellings live in `api/internal/auth/scope.go` and are the source of truth on the consumer side — renaming a scope is always a two-repo change. Same kind of coupling will apply to financial-tracker-api when it lands.
 
-### Important: the RDS module owns its own VPC
+## Project notes
 
-`modules/rds/main.tf` instantiates a **second** `terraform-aws-modules/vpc/aws` (`module.rds_vcp`) with its own CIDR, subnets, subnet group, and security group. It is **not** attached to the root `module.vpc`. When changing networking, be aware that the RDS network is independent — the root VPC's subnets/SGs are not visible to the DB. The RDS SG currently allows 5432 from `0.0.0.0/0` and the instance is `publicly_accessible = true`; preserve or tighten intentionally.
-
-### `modules/ec2-instance` is defined but unused
-
-`aws/modules/ec2-instance/` exists with its own variables and an `aws_instance.app_server` resource, but **no `module "ec2-instance"` block in `aws/main.tf` currently references it**. The module also references `module.vpc.default_security_group_id` and `module.vpc.public_subnets[0]` from inside its own scope — those are not passed in, so wiring it up requires either passing VPC outputs as variables or restructuring. Don't assume EC2 instances are part of the live plan.
-
-### Variable wiring quirks
-
-- Several root-level vars (`enable_vpn_gateway`, `instance_count`, `resource_tags`, the EC2-related vars) are declared in `aws/variables.tf` but not consumed anywhere — they're scaffolding for not-yet-wired modules. The README documents them as if they were active; trust the code.
-- `var.db_password` and `var.secret_key` are required sensitive vars with no defaults — `plan`/`apply` fails without them.
-- The RDS module declares its own `vpc_cidr_block` default (`10.0.0.0/16`), which **overlaps** the root VPC's default. The README mentions `10.1.0.0/16` for RDS, but the code default is `10.0.0.0/16`; set explicitly when the two VPCs need to coexist or peer.
-
-## Conventions
-
-- Resource tagging is ad-hoc per module (some use `var.resource_tags`, some hardcode `Name`/`Owner`). There is no central tagging module.
-- External modules are pinned by `version`; keep that discipline when adding new ones.
-- `terraform.tfvars` is gitignored (per `.gitignore`) — never commit it, and never echo `secret_key` / `db_password` into logs or PRs.
+`docs/project-notes/` holds the ADRs and historical context shared across all modules. Module-specific decisions reference ADR numbers from there. New ADRs go in that directory regardless of which module they describe.
