@@ -4,6 +4,35 @@ Per-GitHub-issue work tracking. New entries at the top.
 
 ---
 
+## Issue #TBD — RDS hardening: parameterize + consolidate into shared VPC + tighten network
+
+**Date:** 2026-05-21
+**Status:** Open — not yet filed on GitHub
+**Branch:** —
+
+Two coordinated changes to `aws/modules/rds/`, both touching the same module:
+
+**Parameterization (in flight — user driving):**
+- Lift hardcoded `aws_db_instance` fields out of `main.tf` into variables: `identifier`, `instance_class`, `allocated_storage`, `engine_version`, `master_username`.
+- Remove tutorial-isms: parameter group `name = "education"`, SG `name = "education_rds"`, master username `"edu"`.
+- Add `outputs.tf` exposing `endpoint`, `port`, `address`, `master_username`, `security_group_id` so product workspaces can consume via `terraform_remote_state`.
+
+**Hardening (follow-up — see ADR-004):**
+- Drop the embedded `module.rds_vcp`. Module takes `vpc_id` + `subnet_ids` as inputs from the shared `aws-shared` workspace.
+- Default `publicly_accessible = false`; place instance in private subnets.
+- Replace `cidr_blocks = ["0.0.0.0/0"]` SG ingress with an `allowed_security_group_ids` list. Consumers attach by passing their task SG.
+- Default `skip_final_snapshot = false`.
+
+**Why bundled:** both changes rewrite the same resource block; doing them in separate passes means the parameterization PR adds variables that the hardening PR immediately reshapes (network inputs change, security defaults change). Easier to land together.
+
+**Downstream doc updates required when this lands:**
+- `aws/commerce/CLAUDE.md` — RDS bootstrap section (the "allow my IP, run psql, revert" recipe stops working once the instance is in a private VPC; replace with ECS-exec / bastion recipe).
+- `docs/project-notes/facts.md` — RDS facts table (CIDR row goes away; public accessibility flips; username changes).
+
+**Blocked on:** Nothing. ADR-004 accepted 2026-05-21.
+
+---
+
 ## Issue #9 — Auth0: first M2M client (service-to-service)
 
 **Date:** 2026-04-29

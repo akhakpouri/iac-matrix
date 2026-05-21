@@ -77,3 +77,51 @@ The bootstrap app is granted the Management API with exactly the scopes needed t
 - The bootstrap app must **never** be managed by Terraform. If `auth0_client.terraform_bootstrap` showed up in this config, the first apply that revoked its grants would break the next plan.
 - Credential rotation is manual: rotate in the dashboard, update the workspace variable / `secrets.tfvars`.
 - A new environment (e.g. prod tenant) repeats the bootstrap manually before Terraform can manage anything in it.
+
+---
+
+## ADR-004 — RDS lives in the shared VPC; module takes networking primitives as inputs
+
+**Date:** 2026-05-21
+**Status:** Accepted (implementation pending)
+
+`modules/rds/` will be refactored to consume `vpc_id`, `subnet_ids`, and an `allowed_security_group_ids` list rather than provisioning its own VPC, subnets, and a wide-open security group. The shared `aws-shared` workspace owns the VPC; the RDS module becomes just a database (subnet group, SG, parameter group, instance) that plugs into that shared network.
+
+### Rationale
+
+- Today `modules/rds/main.tf` instantiates a second `terraform-aws-modules/vpc/aws` (`module.rds_vcp`) with its own CIDR space. This second VPC has no route to the main VPC where future ECS tasks will run — there is no peering, no transit gateway. The only path runtime traffic can take to RDS today is the public internet, gated by `publicly_accessible = true` and an SG ingress of `0.0.0.0/0:5432`.
+- Collapsing RDS into the shared VPC keeps application traffic internal; SG rules become the access control (allow `5432` from each consuming service's task SG, deny everything else).
+- The module's `vpc_cidr_block` default (`10.0.0.0/16`) overlaps the main VPC's default — even if peering were added later it wouldn't work without a CIDR change first. Consolidation removes the trap.
+- Aligns with the shared-resources pattern (ADR-001 / hub-and-spoke): `aws-shared` owns the network, product workspaces consume it via `terraform_remote_state`.
+
+### Module shape after refactor
+
+```hcl
+module "rds" {
+  source = "./modules/rds"
+
+  identifier                 = "shared-postgres"
+  vpc_id                     = module.vpc.vpc_id
+  subnet_ids                 = module.vpc.private_subnets   # private, not public
+  allowed_security_group_ids = []                           # appended per-consumer over time
+  master_username            = "postgres"
+  db_password                = var.db_password
+  # instance_class, allocated_storage, engine_version: defaulted, overridable
+}
+```
+
+The module no longer owns `module.rds_vcp`, `data.aws_availability_zones`, or the world-open SG ingress.
+
+### Security posture after refactor
+
+- `publicly_accessible = false` by default; instance in private subnets.
+- SG ingress empty by default; consumers attach by passing their own SG id into `allowed_security_group_ids`, rendered as `source_security_group_id` ingress rules.
+- `skip_final_snapshot = false` by default so accidental destroys leave a recoverable snapshot.
+- Master password remains a TFC workspace variable; per-product DB users created via the manual bootstrap documented in `aws/commerce/CLAUDE.md` (which becomes a from-inside-the-VPC operation — `psql` via ECS exec or a temporary bastion — not a "temporarily allow your IP" operation).
+
+### Consequences
+
+- State for `learn-terraform-aws` is currently empty (verified 2026-05-21), so the refactor applies fresh — no in-place migration of an existing RDS instance is needed.
+- Any future product reaching RDS goes through the shared VPC; its task SG must be added to `allowed_security_group_ids`. There is no public endpoint to fall back on.
+- The RDS bootstrap section in `aws/commerce/CLAUDE.md` must be updated when this lands — the "allow my IP, run psql, revert" pattern stops working.
+- Pairs with the same-pass parameterization of hardcoded `aws_db_instance` fields (`identifier`, `instance_class`, `allocated_storage`, `engine_version`, `master_username`). Both changes touch the same module and are tracked together — see issue entry.

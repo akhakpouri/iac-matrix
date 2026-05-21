@@ -38,7 +38,9 @@ Root-module pieces:
 
 ### Quirk: the RDS module owns its own VPC
 
-`modules/rds/main.tf` instantiates a **second** `terraform-aws-modules/vpc/aws` (`module.rds_vcp`) with its own CIDR, subnets, subnet group, and security group. It is **not** attached to the root `module.vpc`. When a product submodule (e.g. `commerce-api/`) needs to reach RDS, the route is via the RDS module's security group — allow inbound 5432 from the consuming service's SG. There is no VPC peering today; the RDS instance is currently `publicly_accessible = true` with `5432` open to `0.0.0.0/0`. Tighten as part of the commerce-api deployment.
+`modules/rds/main.tf` instantiates a **second** `terraform-aws-modules/vpc/aws` (`module.rds_vcp`) with its own CIDR, subnets, subnet group, and security group. It is **not** attached to the root `module.vpc`. The RDS instance is currently `publicly_accessible = true` with `5432` open to `0.0.0.0/0` — the only path runtime traffic can take is the public internet.
+
+> **Planned consolidation — see [ADR-004](../docs/project-notes/decisions.md#adr-004--rds-lives-in-the-shared-vpc-module-takes-networking-primitives-as-inputs) and the RDS hardening issue in `docs/project-notes/issues.md`.** The module will be refactored to take `vpc_id` + `subnet_ids` from the shared workspace, default `publicly_accessible = false`, and replace the world-open SG ingress with an `allowed_security_group_ids` list. This text describes current state; remove this quirk section once the refactor lands.
 
 ### `modules/ec2-instance/` is defined but unused
 
@@ -48,7 +50,7 @@ Root-module pieces:
 
 - Several root-level vars (`enable_vpn_gateway`, `instance_count`, `resource_tags`, the EC2-related vars) are declared in `variables.tf` but unused — scaffolding for not-yet-wired modules. The README documents them as if active; trust the code.
 - `var.db_password` and `var.secret_key` are required sensitive vars with no defaults — `plan` / `apply` fails without them.
-- The RDS module declares its own `vpc_cidr_block` default (`10.0.0.0/16`) which **overlaps** the root VPC's default. The README mentions `10.1.0.0/16` for RDS, but the code default is `10.0.0.0/16`; set explicitly when the two VPCs need to coexist or peer.
+- The RDS module declares its own `vpc_cidr_block` default (`10.0.0.0/16`) which **overlaps** the root VPC's default. The README mentions `10.1.0.0/16` for RDS, but the code default is `10.0.0.0/16`; set explicitly when the two VPCs need to coexist or peer. (Goes away with ADR-004 — RDS will live in the shared VPC.)
 
 ## Conventions
 

@@ -1,10 +1,9 @@
 data "aws_availability_zones" "availability_zones" {}
 
 module "rds_vcp" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "6.0.0"
+  source = "terraform-aws-modules/vpc/aws"
 
-  name                 = "rds-vpc"
+  name                 = var.instance_name
   cidr                 = var.vpc_cidr_block
   azs                  = data.aws_availability_zones.availability_zones.names
   public_subnets       = var.public_subnet_rds_cidr_blocks
@@ -55,12 +54,12 @@ resource "aws_db_parameter_group" "education" {
 }
 
 resource "aws_db_instance" "rds_instance" {
-  identifier             = "education-rds-instance"
+  identifier             = var.db_identified
   instance_class         = "db.t3.micro"
   allocated_storage      = 5
-  engine                 = "postgres"
-  engine_version         = "17.4"
-  username               = "edu"
+  engine                 = var.db_engine
+  engine_version         = var.db_version
+  username               = var.db_username
   password               = var.db_password
   db_subnet_group_name   = aws_db_subnet_group.rds_subnet_group.name
   vpc_security_group_ids = [aws_security_group.rds.id]

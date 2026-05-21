@@ -14,8 +14,36 @@ variable "public_subnet_rds_cidr_blocks" {
   ]
 }
 
+variable "db_username" {
+  description = "Db username"
+  type        = string
+  default     = "postgres"
+}
+
 variable "db_password" {
   description = "Db password"
   type        = string
   sensitive   = true
+}
+
+variable "instance_name" {
+  description = "Name of the RDS instance"
+  type        = string
+}
+
+variable "db_identified" {
+  description = "Identifier of the RDS databse"
+  type        = string
+}
+
+variable "db_engine" {
+  description = "Dabase Engine"
+  type        = string
+  default     = "postgres"
+}
+
+variable "db_version" {
+  description = "Database version"
+  type        = string
+  default     = "17.4"
 }
