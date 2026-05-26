@@ -31,15 +31,21 @@ variable "instance_name" {
   type        = string
 }
 
-variable "db_identified" {
-  description = "Identifier of the RDS databse"
+variable "db_identifier" {
+  description = "Identifier of the RDS database instance"
   type        = string
 }
 
 variable "db_engine" {
-  description = "Dabase Engine"
-  type        = string
-  default     = "postgres"
+  description = "Database Engine"
+  type        = list(string)
+  default     = ["postgres", "mysql", "mariadb"]
+}
+
+variable "resource_family" {
+  description = "Database resource family"
+  type        = list(string)
+  default     = ["postgres18", "postgres17", "mysql8.0", "mariadb10.5", "postgres16", "mysql5.7", "mariadb10.3"]
 }
 
 variable "db_version" {

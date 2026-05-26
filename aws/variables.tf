@@ -78,3 +78,9 @@ variable "db_password" {
   type        = string
   sensitive   = true
 }
+
+variable "db_username" {
+  description = "Db username"
+  type        = string
+  default     = "postgres"
+}
