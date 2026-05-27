@@ -19,6 +19,7 @@ module "vpc" {
 module "rds" {
   source         = "./modules/rds"
   rds_identifier = "shared-instance"
-  rds_password   = var.db_password
+  rds_password   = var.rds_password
+  rds_username   = var.rds_username
   instance_name  = "shared-vpc"
 }

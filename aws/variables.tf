@@ -73,14 +73,14 @@ variable "resource_tags" {
   }
 }
 
-variable "db_password" {
-  description = "Db password"
+variable "rds_password" {
+  description = "RDS password"
   type        = string
   sensitive   = true
 }
 
-variable "db_username" {
-  description = "Db username"
+variable "rds_username" {
+  description = "RDS username"
   type        = string
   default     = "postgres"
 }
