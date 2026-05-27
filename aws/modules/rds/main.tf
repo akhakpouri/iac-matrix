@@ -6,6 +6,7 @@ module "rds_vcp" {
   name                 = var.instance_name
   cidr                 = var.vpc_cidr_block
   azs                  = data.aws_availability_zones.availability_zones.names
+  instance_tenancy     = "default"
   public_subnets       = var.public_subnet_rds_cidr_blocks
   enable_dns_hostnames = true
   enable_dns_support   = true
@@ -44,10 +45,8 @@ resource "aws_security_group" "rds" {
 }
 
 resource "aws_db_parameter_group" "shared" {
-
-  for_each = toset(var.resource_family)
-  name     = "shared"
-  family   = each.key
+  name   = "shared"
+  family = var.resource_family
 
   parameter {
     name  = "log_connections"
@@ -56,17 +55,16 @@ resource "aws_db_parameter_group" "shared" {
 }
 
 resource "aws_db_instance" "rds_instance" {
-  identifier             = var.db_identifier
+  identifier             = var.rds_identifier
   instance_class         = "db.t3.micro"
   allocated_storage      = 5
-  for_each               = toset(var.db_engine)
-  engine                 = each.key
+  engine                 = var.db_engine
   engine_version         = var.db_version
-  username               = var.db_username
-  password               = var.db_password
+  username               = var.rds_username
+  password               = var.rds_password
   db_subnet_group_name   = aws_db_subnet_group.rds_subnet_group.name
   vpc_security_group_ids = [aws_security_group.rds.id]
-  parameter_group_name   = aws_db_parameter_group.shared[each.key].name
+  parameter_group_name   = aws_db_parameter_group.shared.name
   publicly_accessible    = true
   skip_final_snapshot    = true
 }
