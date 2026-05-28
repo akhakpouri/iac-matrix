@@ -1,13 +1,7 @@
-provider "postgresql" {
-  host            = var.rds_host
-  port            = var.database_port
-  username        = var.rds_username
-  password        = var.rds_password
-  database        = "postgres"
-  superuser       = false
-  scheme          = "awspostgres"
-  connect_timeout = 15
-}
+# Provider config lives in the caller (root workspace), not here — a reusable
+# module should declare what provider it needs (terraform.tf) and inherit the
+# configured instance. The caller wires host/port/username from
+# terraform_remote_state and the master password from a workspace var.
 
 resource "postgresql_database" "database" {
   name  = var.db_name
@@ -32,9 +26,10 @@ resource "postgresql_grant" "grant" {
 
 module "secret_manager" {
   depends_on          = [random_password.db_password, postgresql_database.database, postgresql_role.role]
-  source              = "git::https://github.com/terraform-aws-modules/terraform-aws-secrets-manager.git//"
-  name                = "/commerce-api/rds/psql"
-  description         = "Credentials of commerce database"
+  source              = "terraform-aws-modules/secrets-manager/aws"
+  version             = "~> 2.1"
+  name                = var.secret_name
+  description         = "Application database credentials for ${var.db_name}"
   block_public_policy = true
   secret_string = jsonencode({
     engine   = "postgresql",
@@ -44,10 +39,6 @@ module "secret_manager" {
     port     = var.database_port,
     database = var.db_name
   })
-}
-
-resource "aws_secretsmanager" "name" {
-
 }
 
 resource "random_password" "db_password" {
