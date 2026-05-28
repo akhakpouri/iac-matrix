@@ -22,7 +22,7 @@ variable "rds_host" {
 variable "database_port" {
   description = "default database port"
   type        = number
-  default     = 5433
+  default     = 5432
 }
 
 variable "rds_password" {

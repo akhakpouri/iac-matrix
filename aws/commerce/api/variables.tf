@@ -24,5 +24,5 @@ variable "rds_username" {
 variable "database_port" {
   description = "default database port"
   type        = number
-  default     = 5433
+  default     = 5432
 }
