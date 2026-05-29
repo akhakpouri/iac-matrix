@@ -4,32 +4,97 @@ Per-GitHub-issue work tracking. New entries at the top.
 
 ---
 
+## Issue #14 — Docs refresh for the post-issue-13 architecture
+
+**Date:** 2026-05-29
+**Status:** In progress
+**Branch:** `feature/issue-14`
+
+Bring all READMEs and project-notes into line with the shape that landed in issue-13. The code moved; the docs hadn't.
+
+**Scope:**
+
+- [x] Rewrite root `README.md` — old version listed modules and vars that no longer exist (EC2, `secret_key`), pointed at the wrong TFC workspace (`learn-terraform-aws` → `platform-shared`), and had no mention of `auth0/`, `commerce-api`, the shared-instance + per-app-DB pattern, or the new module layout.
+- [x] Create `aws/commerce/README.md` — orientation layer for the commerce product directory: workspaces table, wiring diagram, variables needed locally vs from remote_state, how to add another commerce workspace.
+- [x] Update `docs/project-notes/facts.md` — TFC workspace name fix, drop EC2 row, add `commerce-api` workspace section, refresh RDS table for PG18 + new identifiers, add shared-modules table, refresh required-versions table.
+- [x] Update this file (issues.md) — close Issue #13, supersede Issue #TBD's bootstrap scope with ADR-005 reference, add this entry.
+- [x] Update `docs/project-notes/bugs.md` — first BUG entry for the PG18 `log_connections` boolean→enum break.
+
+**Deferred to a follow-up issue (not in #14's scope):**
+
+- `aws/CLAUDE.md` and `aws/commerce/CLAUDE.md` still reference deleted modules (`s3-instance`, `hello`, `ec2-instance`) and the old workspace name. Worth a pass, but separate from this docs-refresh issue.
+
+---
+
+## Issue #13 — Shared RDS instance + per-app logical DB via decentralized bootstrap
+
+**Date:** 2026-05-28
+**Status:** Done — pending PR merge to `main`
+**Branch:** `feature/issue-13`
+
+Rebuild the AWS module layout around a shared RDS instance with per-app logical databases provisioned by each app's own workspace. Outcome: adding `financial-tracker-api` later is a new workspace + a few module calls, not a new RDS instance and not copy-pasted module code.
+
+### Decisions made on this branch
+
+- **ADR-005** — Per-app DB bootstrap is Terraform-driven (`cyrilgdn/postgresql` module + `terraform_remote_state`), superseding ADR-004's "manual psql from inside the VPC" plan. ADR-004's networking refactor remains pending.
+
+### Architectural shape (after)
+
+- `platform-shared` (`aws/`) owns one shared RDS instance and one VPC. Outputs `postgres_address` / `postgres_port` / `master_username` / `rds_security_group_id` for consumers.
+- App workspaces (first: `commerce-api` at `aws/commerce/api/`) own their ECR + logical DB + owner role + AWS Secrets Manager secret. They read RDS connection info from `platform-shared` via `terraform_remote_state` and authenticate as the RDS master to create their objects.
+- Shared modules at `aws/modules/{rds,db,ecr,s3}`, consumed by product workspaces via `git::` source pinned to a ref.
+
+### Concrete changes
+
+- Renamed `aws/modules/db` → `aws/modules/rds` (the instance module). `db` is now the logical-database module (`postgresql_database` + `postgresql_role` + `postgresql_grant` + `module.secret_manager`).
+- Hoisted `aws/commerce/api/modules/{ecr,db}` up to `aws/modules/{ecr,db}` so they're shareable, and switched `commerce/api` to consume them via `git::` source.
+- Moved `provider "postgresql"` configuration out of the child module into the `commerce/api` root, where it's configured from `data.terraform_remote_state.rds` outputs + `var.rds_password`.
+- `aws/output.tf` now re-exports `master_username` and `rds_security_group_id` in addition to the existing `postgres_*` outputs.
+- Deleted `aws/modules/ec2/` (defined-but-unused; its internal `module.vpc.*` references didn't resolve).
+- Removed unused root vars `secret_key` and `resource_tags`.
+- Fixed broken `aws_db_instance.rds_instance["postgres"]` indexing in `aws/modules/rds/outputs.tf` (legacy of an earlier `for_each` shape).
+- Module `cyrilgdn/postgresql ~> 1.25` and `terraform-aws-modules/secrets-manager/aws ~> 2.1` pinned.
+
+### Operational implications
+
+- `rds_password` is now a TFC **Variable Set** attached to both `platform-shared` (creates the instance with this master) and `commerce-api` (authenticates as master to provision its DB). Rotation is one edit.
+- The postgresql provider connects on every plan/apply, so app workspaces need network reach to RDS. Works today because the instance is `publicly_accessible = true`. When ADR-004 lands and the instance becomes private, app workspaces' execution mode (or a TFC agent) will need to change — flagged on the ADR-004 entry below.
+
+### Bugs surfaced and fixed on this branch
+
+- **BUG-001** — `log_connections` is an enum (not boolean) in PG18. See `bugs.md`.
+
+---
+
 ## Issue #TBD — RDS hardening: parameterize + consolidate into shared VPC + tighten network
 
 **Date:** 2026-05-21
-**Status:** Open — not yet filed on GitHub
+**Status:** Partially complete — parameterization landed in #13, network hardening still pending.
 **Branch:** —
 
 Two coordinated changes to `aws/modules/rds/`, both touching the same module:
 
-**Parameterization (in flight — user driving):**
-- Lift hardcoded `aws_db_instance` fields out of `main.tf` into variables: `identifier`, `instance_class`, `allocated_storage`, `engine_version`, `master_username`.
-- Remove tutorial-isms: parameter group `name = "education"`, SG `name = "education_rds"`, master username `"edu"`.
-- Add `outputs.tf` exposing `endpoint`, `port`, `address`, `master_username`, `security_group_id` so product workspaces can consume via `terraform_remote_state`.
+**Parameterization — DONE in #13:**
+- ✅ Hardcoded `aws_db_instance` fields lifted to variables where they were tutorial-style names (`identifier` → `var.rds_identifier`, `engine`/`engine_version` → vars, `master_username` → `var.rds_username` with `"postgres"` default). `instance_class` and `allocated_storage` still hardcoded — defer until a real tier decision.
+- ✅ Tutorial-isms removed: parameter group `name = "shared"`, SG `name = "shared_rds"`, master username default `"postgres"`.
+- ✅ `outputs.tf` exposes `endpoint`, `port`, `address`, `master_username`, `security_group_id` consumed via `terraform_remote_state`.
 
-**Hardening (follow-up — see ADR-004):**
+**Bootstrap mechanism — SUPERSEDED by [ADR-005](decisions.md#adr-005--per-app-db-bootstrap-is-terraform-driven-not-manual-psql):**
+- The "manual psql from inside the VPC" bullet in ADR-004's Security-posture section no longer applies. Per-app users/databases now provisioned by `aws/modules/db` (cyrilgdn/postgresql).
+
+**Network hardening — STILL PENDING (ADR-004):**
 - Drop the embedded `module.rds_vcp`. Module takes `vpc_id` + `subnet_ids` as inputs from the shared `aws-shared` workspace.
 - Default `publicly_accessible = false`; place instance in private subnets.
 - Replace `cidr_blocks = ["0.0.0.0/0"]` SG ingress with an `allowed_security_group_ids` list. Consumers attach by passing their task SG.
 - Default `skip_final_snapshot = false`.
 
-**Why bundled:** both changes rewrite the same resource block; doing them in separate passes means the parameterization PR adds variables that the hardening PR immediately reshapes (network inputs change, security defaults change). Easier to land together.
+**Downstream impact when network hardening lands:**
 
-**Downstream doc updates required when this lands:**
-- `aws/commerce/CLAUDE.md` — RDS bootstrap section (the "allow my IP, run psql, revert" recipe stops working once the instance is in a private VPC; replace with ECS-exec / bastion recipe).
-- `docs/project-notes/facts.md` — RDS facts table (CIDR row goes away; public accessibility flips; username changes).
+- App workspaces using `cyrilgdn/postgresql` lose network reach to RDS from TFC remote runners (private endpoint). Each affected workspace needs an execution-mode change or an in-VPC TFC agent. Picked-when documented on the same PR.
+- `aws/commerce/CLAUDE.md` — RDS bootstrap section already obsolete per ADR-005; the network change just confirms the manual-psql recipe is gone.
+- `docs/project-notes/facts.md` — RDS facts table (CIDR row goes away; public accessibility flips).
 
-**Blocked on:** Nothing. ADR-004 accepted 2026-05-21.
+**Blocked on:** Nothing — ADR-004 accepted 2026-05-21; ready when prioritized.
 
 ---
 

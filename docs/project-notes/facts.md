@@ -4,60 +4,110 @@
 
 | Directory | Provider | Purpose |
 |-----------|----------|---------|
-| `aws/`    | AWS      | VPC, EC2 (defined-but-unused), S3, RDS PostgreSQL |
+| `aws/`    | AWS      | VPC, S3, shared RDS PostgreSQL, per-product compute (ECR + logical DB + ECS in flight) |
 | `auth0/`  | Auth0    | Tenant config: APIs, M2M clients, SPA clients, Universal Login |
 
 See ADR-001 for the per-provider split rationale.
 
 ## Terraform Cloud
 
-| Key          | Value                  |
-|--------------|------------------------|
-| Organization | `akhakpouri`           |
-| `aws/` workspace   | `learn-terraform-aws` (project: `Learn Terrafom`) |
-| `auth0/` workspace | `auth0` (no project — sits ungrouped under the org) |
+| Workspace                    | Path                  | Project            | Notes |
+|------------------------------|-----------------------|--------------------|-------|
+| `platform-shared`            | `aws/`                | `platform-shared`  | Owns the VPC and the single shared RDS instance. Exports endpoint/SG via outputs. |
+| `commerce-api`               | `aws/commerce/api/`   | `commerce-api`     | Owns commerce's ECR repo + logical DB on the shared instance. Reads `platform-shared` via `terraform_remote_state`. |
+| `auth0`                      | `auth0/`              | (none)             | Auth0 tenant — sits ungrouped under the org. |
 
-Sensitive variables (`auth0_client_id`, `auth0_client_secret`, and `domain` for the auth0 workspace; `secret_key`, `db_password` for the aws workspace) are stored as workspace variables in TFC, not in committed `.tfvars` files.
+Org: `akhakpouri`.
+
+### Sensitive variables (workspace-scoped)
+
+- `rds_password` — master password for the shared RDS instance. Defined once as a TFC **Variable Set** and attached to both `platform-shared` and `commerce-api` so rotation is a single edit.
+- `auth0_client_id`, `auth0_client_secret`, `domain` — set as workspace variables on the `auth0` workspace.
+
+Sensitive values are never committed. Gitignored `*.tfvars` is permitted for local-execution workspaces, but the persistent store is TFC workspace vars / Variable Sets.
 
 ## Required versions
 
-| Component | Version  |
-|-----------|----------|
-| Terraform | `>= 1.14.0` |
-| `hashicorp/aws`    | unpinned (`aws/terraform.tf`) |
-| `hashicorp/random` | unpinned |
-| `hashicorp/time`   | unpinned |
-| `auth0/auth0`      | `>= 1.44.0` |
+| Component                                              | Version    | Pinned in                                                           |
+|--------------------------------------------------------|------------|---------------------------------------------------------------------|
+| Terraform                                              | `>= 1.14.0`| Root `CLAUDE.md`, `aws/CLAUDE.md`                                   |
+| `hashicorp/aws`                                        | unpinned   | `aws/terraform.tf`, `aws/commerce/api/terraform.tf`                 |
+| `cyrilgdn/postgresql`                                  | `~> 1.25`  | `aws/modules/db/terraform.tf`, `aws/commerce/api/terraform.tf`      |
+| `hashicorp/random`                                     | unpinned   | `aws/modules/db/terraform.tf`                                       |
+| `terraform-aws-modules/vpc/aws`                        | `6.6.1`    | `aws/main.tf` (root VPC). `aws/modules/rds/main.tf` uses unpinned reference for the nested VPC — to be removed when ADR-004 lands. |
+| `terraform-aws-modules/secrets-manager/aws`            | `~> 2.1`   | `aws/modules/db/main.tf`                                            |
+| `auth0/auth0`                                          | `>= 1.44.0`| `auth0/terraform.tf`                                                |
 
-## AWS — root module (`aws/`)
+## AWS — `platform-shared` workspace (`aws/`)
 
-| Key | Value | Source |
-|-----|-------|--------|
-| Region | `us-east-1` | `var.region` default |
-| Main VPC CIDR | `10.0.0.0/16` | `var.vpc_cidr_block` default |
-| Availability zones | `us-east-1a`, `us-east-1b`, `us-east-1c` | hardcoded in `aws/main.tf` |
-| Public subnets (default count) | 2, sliced from `10.0.1.0/24`–`10.0.8.0/24` | `var.public_subnet_cidr_blocks` |
-| Private subnets (default count) | 2, sliced from `10.0.101.0/24`–`10.0.108.0/24` | `var.private_subnet_cidr_blocks` |
+| Key                          | Value                                         | Source                                    |
+|------------------------------|-----------------------------------------------|-------------------------------------------|
+| Region                       | `us-east-1`                                   | `var.region` default                      |
+| Main VPC name                | `server-vpc`                                  | `aws/main.tf:module "vpc"`                |
+| Main VPC CIDR                | `10.0.0.0/16`                                 | `var.vpc_cidr_block` default              |
+| Availability zones           | `us-east-1a`, `us-east-1b`, `us-east-1c`      | hardcoded in `aws/main.tf`                |
+| Public subnets (default)     | 2, sliced from `10.0.1.0/24`–`10.0.8.0/24`    | `var.public_subnet_cidr_blocks`           |
+| Private subnets (default)    | 2, sliced from `10.0.101.0/24`–`10.0.108.0/24`| `var.private_subnet_cidr_blocks`          |
+| VPN gateway                  | enabled (default)                             | `var.enable_vpn_gateway`                  |
 
-### RDS (separate VPC, owned by `modules/rds`)
+### Shared RDS instance (current — pre-ADR-004 posture)
 
-| Key | Value |
-|-----|-------|
-| Engine | PostgreSQL 17.4 |
-| Instance class | `db.t3.micro` |
-| Allocated storage | 5 GB |
-| Username | `edu` |
-| Default RDS VPC CIDR | `10.0.0.0/16` (overlaps main VPC default — see open issue) |
-| RDS public subnets | `10.0.4.0/24`, `10.0.5.0/24`, `10.0.6.0/24` |
-| Public accessibility | `true` |
-| Security group ingress | `0.0.0.0/0:5432` |
+Owned by `aws/modules/rds/`, instantiated once as `module "rds"` in `aws/main.tf`.
 
-> RDS provisions its own VPC (`module.rds_vcp` inside `aws/modules/rds/main.tf`) — it is **not** attached to the root `module.vpc`.
+| Key                       | Value                                           |
+|---------------------------|-------------------------------------------------|
+| Identifier                | `shared-instance`                               |
+| Engine / version          | PostgreSQL `18.4`                               |
+| Parameter family          | `postgres18`                                    |
+| Instance class            | `db.t3.micro` (hardcoded in module)             |
+| Allocated storage         | `5` GB (hardcoded in module)                    |
+| Master username           | `postgres` (default)                            |
+| Master password           | `var.rds_password` (TFC Variable Set)           |
+| Skip final snapshot       | `true` (pending ADR-004 → `false`)              |
+| Public accessibility      | `true` (pending ADR-004 → `false`)              |
+| Owns its own VPC          | yes — `module.rds_vcp` (pending ADR-004 → drop) |
+| RDS VPC CIDR              | `10.0.0.0/16` (overlaps main VPC — trap)        |
+| RDS subnets               | `10.0.4.0/24`, `10.0.5.0/24`, `10.0.6.0/24`     |
+| Security group ingress    | `0.0.0.0/0:5432` (pending ADR-004 → SG list)    |
+| Parameter group           | `shared`, `log_connections = "all"` (PG18 enum) |
 
-### Sensitive variables (no defaults — must be supplied)
+> The nested VPC, world-open SG, and `publicly_accessible = true` are all the pre-hardening state ADR-004 will fix. See [ADR-004](decisions.md#adr-004--rds-lives-in-the-shared-vpc-module-takes-networking-primitives-as-inputs).
 
-- `var.secret_key` — used by the `joatmon08/hello/random` module
-- `var.db_password` — RDS master password
+### Outputs (consumed by product workspaces via `terraform_remote_state`)
+
+| Output                  | Value                            |
+|-------------------------|----------------------------------|
+| `postgres_address`      | RDS hostname (no port)           |
+| `postgres_port`         | RDS port                         |
+| `postgres_endpoint`     | `address:port`                   |
+| `master_username`       | master user on the instance      |
+| `rds_security_group_id` | SG id (for app workspaces to add their task SGs to under ADR-004) |
+
+### Shared modules (consumed by product workspaces via `git::` source)
+
+| Module          | Purpose                                                                 |
+|-----------------|-------------------------------------------------------------------------|
+| `modules/rds`   | The shared RDS server. Only `platform-shared` uses it (local source).    |
+| `modules/db`    | Per-app logical database + owner role + AWS Secrets Manager secret. Uses `cyrilgdn/postgresql`. See [ADR-005](decisions.md#adr-005--per-app-db-bootstrap-is-terraform-driven-not-manual-psql). |
+| `modules/ecr`   | Per-app ECR repository. Image tag immutability + scan-on-push + AES256.  |
+| `modules/s3`    | Generic S3 bucket. Currently unused at the workspace level.              |
+
+## AWS — `commerce-api` workspace (`aws/commerce/api/`)
+
+| Key                       | Value                                                                  |
+|---------------------------|------------------------------------------------------------------------|
+| Region                    | `us-east-1`                                                            |
+| RDS connection info       | Read from `platform-shared` outputs via `terraform_remote_state`       |
+| ECR repository            | `commerce-api-registry`                                                |
+| Logical database name     | `commerce`                                                             |
+| Owner role                | `commerce` (login; password generated by `modules/db`)                  |
+| Schemas granted to owner  | `public`, `commerce`                                                   |
+| Secret name (app creds)   | `/commerce-api/rds/psql` in AWS Secrets Manager                        |
+| Module source ref         | `?ref=feature/issue-13` (will flip to `main`, then a pinned tag, on merge) |
+
+### Sensitive variables on this workspace
+
+- `rds_password` — master password (same Variable Set as `platform-shared`).
 
 ## Auth0 — root module (`auth0/`)
 
