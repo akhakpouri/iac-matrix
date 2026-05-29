@@ -1,16 +1,17 @@
 terraform {
   cloud {
     organization = "akhakpouri"
-
     workspaces {
-      project = "platform-shared"
-      name    = "platform-shared"
+      name    = "commerce-api"
+      project = "commerce-api"
     }
-
   }
   required_providers {
     aws = {
       source = "hashicorp/aws"
+    }
+    postgresql = {
+      source = "cyrilgdn/postgresql"
     }
   }
 }

@@ -1,12 +1,12 @@
 data "aws_availability_zones" "availability_zones" {}
 
 module "rds_vcp" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "6.0.0"
+  source = "terraform-aws-modules/vpc/aws"
 
-  name                 = "rds-vpc"
+  name                 = var.instance_name
   cidr                 = var.vpc_cidr_block
   azs                  = data.aws_availability_zones.availability_zones.names
+  instance_tenancy     = "default"
   public_subnets       = var.public_subnet_rds_cidr_blocks
   enable_dns_hostnames = true
   enable_dns_support   = true
@@ -22,7 +22,7 @@ resource "aws_db_subnet_group" "rds_subnet_group" {
 }
 
 resource "aws_security_group" "rds" {
-  name   = "education_rds"
+  name   = "shared_rds"
   vpc_id = module.rds_vcp.vpc_id
 
   ingress {
@@ -40,31 +40,33 @@ resource "aws_security_group" "rds" {
   }
 
   tags = {
-    Name = "education_rds"
+    Name = "shared_rds"
   }
 }
 
-resource "aws_db_parameter_group" "education" {
-  name   = "education"
-  family = "postgres17"
+resource "aws_db_parameter_group" "shared" {
+  name   = "shared"
+  family = var.resource_family
 
   parameter {
+    # PG18 changed log_connections from boolean to enum.
+    # Valid: receipt | authentication | authorization | setup_durations | all
     name  = "log_connections"
-    value = "1"
+    value = "all"
   }
 }
 
 resource "aws_db_instance" "rds_instance" {
-  identifier             = "education-rds-instance"
+  identifier             = var.rds_identifier
   instance_class         = "db.t3.micro"
   allocated_storage      = 5
-  engine                 = "postgres"
-  engine_version         = "17.4"
-  username               = "edu"
-  password               = var.db_password
+  engine                 = var.db_engine
+  engine_version         = var.db_version
+  username               = var.rds_username
+  password               = var.rds_password
   db_subnet_group_name   = aws_db_subnet_group.rds_subnet_group.name
   vpc_security_group_ids = [aws_security_group.rds.id]
-  parameter_group_name   = aws_db_parameter_group.education.name
+  parameter_group_name   = aws_db_parameter_group.shared.name
   publicly_accessible    = true
   skip_final_snapshot    = true
 }

@@ -4,12 +4,6 @@ variable "region" {
   default     = "us-east-1"
 }
 
-variable "secret_key" {
-  description = "secret key for the hllo module"
-  type        = string
-  sensitive   = true
-}
-
 variable "vpc_cidr_block" {
   description = "VPC CIDR block"
   type        = string
@@ -64,17 +58,14 @@ variable "private_subnet_cidr_blocks" {
   ]
 }
 
-variable "resource_tags" {
-  description = "Tags to set for resources."
-  type        = map(string)
-  default = {
-    "project"     = "project-matrix"
-    "environment" = "dev"
-  }
-}
-
-variable "db_password" {
-  description = "Db password"
+variable "rds_password" {
+  description = "RDS password"
   type        = string
   sensitive   = true
+}
+
+variable "rds_username" {
+  description = "RDS username"
+  type        = string
+  default     = "postgres"
 }
