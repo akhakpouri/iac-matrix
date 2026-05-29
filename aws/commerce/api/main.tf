@@ -30,12 +30,12 @@ provider "postgresql" {
 }
 
 module "container_registry" {
-  source          = "git::https://github.com/akhakpouri/iac-matrix.git//aws/modules/ecr?ref=feature/issue-13"
+  source          = "git::https://github.com/akhakpouri/iac-matrix.git//aws/modules/ecr?ref=main"
   repository_name = "commerce-api-registry"
 }
 
 module "database" {
-  source        = "git::https://github.com/akhakpouri/iac-matrix.git//aws/modules/db?ref=feature/issue-13"
+  source        = "git::https://github.com/akhakpouri/iac-matrix.git//aws/modules/db?ref=main"
   db_name       = "commerce"
   db_owner      = "commerce"
   db_schemas    = ["public", "commerce"]

@@ -49,8 +49,10 @@ resource "aws_db_parameter_group" "shared" {
   family = var.resource_family
 
   parameter {
+    # PG18 changed log_connections from boolean to enum.
+    # Valid: receipt | authentication | authorization | setup_durations | all
     name  = "log_connections"
-    value = "1"
+    value = "all"
   }
 }
 
