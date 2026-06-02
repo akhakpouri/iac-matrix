@@ -20,9 +20,10 @@ Bring all READMEs and project-notes into line with the shape that landed in issu
 - [x] Update this file (issues.md) — close Issue #13, supersede Issue #TBD's bootstrap scope with ADR-005 reference, add this entry.
 - [x] Update `docs/project-notes/bugs.md` — first BUG entry for the PG18 `log_connections` boolean→enum break.
 
-**Deferred to a follow-up issue (not in #14's scope):**
+**Initially deferred but completed in-scope:**
 
-- `aws/CLAUDE.md` and `aws/commerce/CLAUDE.md` still reference deleted modules (`s3-instance`, `hello`, `ec2-instance`) and the old workspace name. Worth a pass, but separate from this docs-refresh issue.
+- [x] `aws/CLAUDE.md` rewritten — dropped `module.s3-instance` / `module.hello` / `modules/ec2-instance` references, fixed the workspace name to `platform-shared`, added the shared-modules table, refreshed the "adding a product subdirectory" recipe for the `git::` + remote_state pattern.
+- [x] `aws/commerce/CLAUDE.md` rewritten — status updated to "in progress", path fixed (`aws/commerce/` not `aws/commerce-api/`), workspaces table added, "Landed" vs "Planned" split, RDS bootstrap section replaced with ADR-005-aligned narrative, dependency on the `shared-rds-master` Variable Set documented.
 
 ---
 
