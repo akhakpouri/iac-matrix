@@ -15,6 +15,22 @@ resource "postgresql_role" "role" {
   password   = random_password.db_password.result
 }
 
+# `public` exists by default in every new Postgres database — created from
+# template1. Any other schema listed in db_schemas has to be created here,
+# otherwise the grant below errors with "Could not find schema X while looking
+# for owner". New schemas are owned by the app role.
+locals {
+  schemas_to_create = [for s in var.db_schemas : s if s != "public"]
+}
+
+resource "postgresql_schema" "schema" {
+  for_each = toset(local.schemas_to_create)
+
+  name     = each.value
+  database = postgresql_database.database.name
+  owner    = postgresql_role.role.name
+}
+
 resource "postgresql_grant" "grant" {
   for_each    = toset(var.db_schemas)
   role        = postgresql_role.role.name
@@ -22,6 +38,8 @@ resource "postgresql_grant" "grant" {
   schema      = each.value
   object_type = "schema"
   privileges  = ["ALL"]
+
+  depends_on = [postgresql_schema.schema]
 }
 
 module "secret_manager" {
