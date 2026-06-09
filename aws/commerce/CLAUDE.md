@@ -6,24 +6,26 @@ Sibling-scoped to `aws/`. The parent `aws/CLAUDE.md` covers shared AWS infrastru
 
 ## Status
 
-**In progress** (as of 2026-05-29). The `aws/commerce/api/` workspace has its ECR repo, logical DB on the shared instance, owner role + grants, and the app-credentials Secrets Manager secret all wired and applied. ECS / ALB / IAM still to land. The Go service in the `commerce-api` repo has the auth0 integration and scope enforcement done.
+**In progress** (as of 2026-06-09). The `commerce` workspace has its API ECR repo, logical DB on the shared instance, owner role + grants, and the app-credentials Secrets Manager secret all wired and applied. ECS / ALB / IAM and the `utils` task still to land. The Go service in the `commerce-api` repo has the auth0 integration and scope enforcement done.
 
-## Workspaces
+## Workspace
 
-| Path     | TFC workspace   | Status                                                                          |
-|----------|-----------------|---------------------------------------------------------------------------------|
-| `api/`   | `commerce-api`  | In progress — ECR + logical DB + secret landed; ECS / ALB / IAM still pending. |
-| `utils/` | TBD             | Planned — one-shot utility ECS tasks (migrations, backfills).                  |
+The whole commerce product deploys from a single TFC workspace, **`commerce`** (org `akhakpouri`, project `commerce`), working directory `aws/commerce/`. `api` and `utils` are concerns within it, not separate workspaces — see [ADR-006](../../docs/project-notes/decisions.md#adr-006--one-commerce-workspace-for-the-whole-product-utils-is-not-its-own-workspace).
+
+| Component   | Status      | Notes |
+|-------------|-------------|-------|
+| API service | In progress | ECR (`commerce-api-registry`) + logical DB + secret landed; ECS / ALB / IAM still pending. |
+| `utils`     | Planned     | One-shot migration/backfill task + `commerce-utils-registry` ECR. Not yet built. |
 
 ## Scope
 
-Single-environment (`prod`) deployment in `us-east-1`. Solo developer — no staging environment yet; staging will be added as a parallel workspace when the project grows.
+Single-environment (`prod`) deployment in `us-east-1`. Solo developer — no staging environment yet; staging will be added as a parallel workspace (a `commerce-staging`) when the project grows.
 
 Goal: one ALB-fronted ECS Fargate service running the API container, with database migrations executed as a separate one-shot ECS task. RDS is the shared instance from `platform-shared`; the per-app DB + role + secret are managed in *this* workspace via `aws/modules/db` (ADR-005).
 
 ## Architecture
 
-### Landed in `api/`
+### Landed
 
 | Concern                 | Resource                                                                          | Source                                                                 |
 |-------------------------|-----------------------------------------------------------------------------------|------------------------------------------------------------------------|
@@ -64,7 +66,7 @@ Source of truth: `commerce-api/api/configs/dev.env.example` and `commerce-api/do
 
 ## Dependencies
 
-- **`platform-shared` workspace** (`aws/`) — supplies `postgres_address`, `postgres_port`, `master_username`, `rds_security_group_id` via `terraform_remote_state`. Must apply before `commerce-api`.
+- **`platform-shared` workspace** (`aws/`) — supplies `postgres_address`, `postgres_port`, `master_username`, `rds_security_group_id` via `terraform_remote_state`. Must apply before `commerce`.
 - **`shared-rds-master` TFC Variable Set** — supplies `rds_password` (master) to both `platform-shared` and this workspace. Used here to authenticate the `cyrilgdn/postgresql` provider when creating the logical DB + role.
 - **`auth0/` (sibling top-level module)** — supplies the `urn:commerce-api` audience and scope definitions consumed at runtime by the API. No direct Terraform reference; values must agree across repos. Renaming a scope is always a multi-repo change (here, plus `api/internal/auth/scope.go` in the commerce-api Go repo).
 

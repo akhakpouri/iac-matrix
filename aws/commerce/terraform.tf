@@ -2,8 +2,8 @@ terraform {
   cloud {
     organization = "akhakpouri"
     workspaces {
-      name    = "commerce-api"
-      project = "commerce-api"
+      name    = "commerce"
+      project = "commerce"
     }
   }
   required_providers {
