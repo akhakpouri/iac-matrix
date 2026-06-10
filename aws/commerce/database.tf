@@ -1,5 +1,5 @@
 module "database" {
-  source        = "git::https://github.com/akhakpouri/iac-matrix.git/aws/modules/db?ref=main"
+  source        = "git::https://github.com/akhakpouri/iac-matrix.git//aws/modules/db?ref=main"
   db_name       = "commerce"
   db_owner      = "commerce"
   db_schemas    = ["public", "commerce"]
