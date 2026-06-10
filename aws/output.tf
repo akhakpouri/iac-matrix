@@ -23,17 +23,17 @@ output "rds_security_group_id" {
   value       = module.rds.security_group_id
 }
 
-output "vcp_id" {
+output "vpc_id" {
   description = "VPC id of the shared services"
-  value       = module.vpc.default_vpc_id
+  value       = module.vpc.vpc_id
 }
 
 output "public_subnet_ids" {
-  description = "Public subnets of the vpc controls"
+  description = "Public subnets of the shared VPC"
   value       = module.vpc.public_subnets
 }
 
 output "private_subnet_ids" {
-  description = "Private subnets of the vpc controls"
+  description = "Private subnets of the shared VPC"
   value       = module.vpc.private_subnets
 }

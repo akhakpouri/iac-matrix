@@ -14,3 +14,26 @@ variable "rds_password" {
   type        = string
   sensitive   = true
 }
+
+# Image tag the task definition points at. Per the sha-only decision, real
+# deploys are sha-tagged and managed by CI (the service ignores task_definition
+# changes), so this is just the bootstrap tag Terraform creates the baseline
+# revision with.
+variable "image_tag" {
+  description = "Container image tag for the commerce-api task definition baseline."
+  type        = string
+  default     = "latest"
+}
+
+# CORS origin the API allows. Placeholder until a storefront/admin domain exists.
+variable "cors_allowed_origin" {
+  description = "Allowed CORS origin for the commerce API."
+  type        = string
+  default     = "*"
+}
+
+variable "api_desired_count" {
+  description = "Number of commerce-api tasks the service keeps running."
+  type        = number
+  default     = 0
+}

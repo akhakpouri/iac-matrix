@@ -20,13 +20,13 @@ A hub-and-spoke shape: one shared workspace owns the network and the database se
         terraform_remote_state ── consumed by every product workspace
                           │
    ┌──────────────────────┼──────────────────────────┐
-commerce-api (aws/commerce/api/)    financial-tracker-api  (future)
-   ├── module.container_registry     same shape
-   └── module.database  ── creates a logical DB + role + secret
-                          on the shared instance
+commerce (aws/commerce/)            financial-tracker-api  (future)
+   ├── module.api_registry / utils_registry   same shape
+   ├── module.database  ── logical DB + role + secret on the shared instance
+   └── ECS service + utils task + ALB + IAM + logs
 ```
 
-Shared modules live at `aws/modules/{rds,db,ecr,s3}` and are consumed by product workspaces via `git::` sources, so adding a new app is `module "<x>" { source = ".../aws/modules/<x>?ref=..." }` plus a new TFC workspace, not a fork of the module code.
+One TFC workspace per **product** (api/utils/etc. are files within it, see [ADR-006](docs/project-notes/decisions.md#adr-006--one-commerce-workspace-for-the-whole-product-utils-is-not-its-own-workspace)). Shared modules live at `aws/modules/{rds,db,ecr,s3}` and are consumed via `git::` sources, so adding a new app is `module "<x>" { source = ".../aws/modules/<x>?ref=..." }`, not a fork of the module code.
 
 ## Per-app database bootstrap
 
@@ -34,8 +34,8 @@ Per-app databases, owner roles, schema grants, and the AWS Secrets Manager secre
 
 ## Adding a new product
 
-1. Create `aws/<product>/<service>/` with its own `terraform.tf` pointing at a new TFC workspace under the org.
-2. Add `data "terraform_remote_state" "rds"` reading `platform-shared` outputs.
+1. Create `aws/<product>/` with its own `terraform.tf` pointing at a new TFC workspace (one workspace per product — ADR-006).
+2. Add `data "terraform_remote_state" "platform"` reading `platform-shared` outputs (RDS connection info + `vpc_id`/subnets).
 3. Configure `provider "postgresql"` at the root using those outputs + a `master_password` workspace variable.
 4. Consume `aws/modules/{ecr,db,s3}` via `git::` source pinned to a ref.
 5. Document the workspace in the product's `README.md` and add it to the workspace table in `docs/project-notes/facts.md`.

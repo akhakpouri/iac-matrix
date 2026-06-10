@@ -4,6 +4,6 @@ module "database" {
   db_owner      = "commerce"
   db_schemas    = ["public", "commerce"]
   secret_name   = "/commerce-api/rds/psql"
-  rds_host      = data.terraform_remote_state.rds.outputs.postgres_address
-  database_port = data.terraform_remote_state.rds.outputs.postgres_port
+  rds_host      = data.terraform_remote_state.platform.outputs.postgres_address
+  database_port = data.terraform_remote_state.platform.outputs.postgres_port
 }

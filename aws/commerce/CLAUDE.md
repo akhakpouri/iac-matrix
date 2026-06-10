@@ -2,20 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working in `aws/commerce/`.
 
-Sibling-scoped to `aws/`. The parent `aws/CLAUDE.md` covers shared AWS infrastructure; this file is the commerce-api deployment layer. See also `aws/commerce/README.md` for the orientation layer.
+Sibling-scoped to `aws/`. The parent `aws/CLAUDE.md` covers shared AWS infrastructure; this file is the commerce deployment layer. See also `aws/commerce/README.md` for the orientation layer.
 
 ## Status
 
-**In progress** (as of 2026-06-09). The `commerce` workspace has its API ECR repo, logical DB on the shared instance, owner role + grants, and the app-credentials Secrets Manager secret all wired and applied. ECS / ALB / IAM and the `utils` task still to land. The Go service in the `commerce-api` repo has the auth0 integration and scope enforcement done.
+**Built — pending first apply** (as of 2026-06-10). The full `commerce` workspace is written and `terraform validate`-clean: both ECR repos, the logical DB + role + secret, the ECS cluster, the API service + task def, the one-shot `utils` task def, the ALB + target group + listener, the two security groups, the IAM roles, and the CloudWatch log groups. Not yet applied to AWS, and no image has been pushed — the API service defaults to `api_desired_count = 0` until CI ships the first sha-tagged image (see CI/CD shape below). The Go service in the `commerce-api` repo has the auth0 integration and scope enforcement done.
 
 ## Workspace
 
 The whole commerce product deploys from a single TFC workspace, **`commerce`** (org `akhakpouri`, project `commerce`), working directory `aws/commerce/`. `api` and `utils` are concerns within it, not separate workspaces — see [ADR-006](../../docs/project-notes/decisions.md#adr-006--one-commerce-workspace-for-the-whole-product-utils-is-not-its-own-workspace).
 
-| Component   | Status      | Notes |
-|-------------|-------------|-------|
-| API service | In progress | ECR (`commerce-api-registry`) + logical DB + secret landed; ECS / ALB / IAM still pending. |
-| `utils`     | Planned     | One-shot migration/backfill task + `commerce-utils-registry` ECR. Not yet built. |
+| Component   | Status                 | Notes |
+|-------------|------------------------|-------|
+| API service | Built — pending deploy | Terraform complete: ECS service + task def, ALB, IAM, logs, SGs, `commerce-api-registry` ECR, logical DB + secret. Awaiting first image push; `api_desired_count = 0` until then. |
+| `utils`     | Built — pending deploy | One-shot migration task def + `commerce-utils-registry` ECR. No service — invoked via `aws ecs run-task` by CI. |
 
 ## Scope
 
@@ -25,31 +25,30 @@ Goal: one ALB-fronted ECS Fargate service running the API container, with databa
 
 ## Architecture
 
-### Landed
+### Landed (all `terraform validate`-clean; file noted in parentheses)
 
-| Concern                 | Resource                                                                          | Source                                                                 |
-|-------------------------|-----------------------------------------------------------------------------------|------------------------------------------------------------------------|
-| Image registry          | `aws_ecr_repository.commerce-api-registry` (immutable tags, scan-on-push, AES256) | `git::...//aws/modules/ecr?ref=main`                                   |
-| Logical database        | `postgresql_database.commerce` on the shared RDS instance                         | `git::...//aws/modules/db?ref=main`                                    |
-| Owner role              | `postgresql_role.commerce` (LOGIN, password from `random_password`)               | same                                                                   |
-| Schema grants           | `postgresql_grant` on `public` + `commerce` schemas                               | same                                                                   |
-| App credentials secret  | `/commerce-api/rds/psql` in AWS Secrets Manager                                   | same (`module.secret_manager` → terraform-aws-modules/secrets-manager) |
+| Concern          | Resource |
+|------------------|----------|
+| Image registries | `module.api_registry` + `module.utils_registry` → `commerce-api-registry` / `commerce-utils-registry` (immutable tags, scan-on-push, AES256, lifecycle policy). `git::...//aws/modules/ecr?ref=main`. (`registry.tf`) |
+| Logical database | `postgresql_database.commerce` + `postgresql_role.commerce` + `postgresql_grant` on `public`/`commerce` + `/commerce-api/rds/psql` secret. `git::...//aws/modules/db?ref=main`, ADR-005. (`database.tf`) |
+| Cluster          | `aws_ecs_cluster.commerce_cluster`. (`ecs-cluster.tf`) |
+| API service      | `aws_ecs_service.api` + `aws_ecs_task_definition.api` — Fargate/awsvpc, port `8080`, public subnets + `assign_public_ip`, attached to the ALB target group. `ignore_changes = [task_definition, desired_count]` (CI owns deploys). (`ecs-api.tf`) |
+| Migrations       | `aws_ecs_task_definition.utils` — one-shot, **no service**; `aws ecs run-task` by CI. Idempotent via GORM AutoMigrate. (`ecs-utils.tf`) |
+| Load balancer    | `aws_lb.commerce_alb` (internet-facing, public subnets) + `aws_lb_target_group.commerce_api` (`target_type = "ip"`, `:8080`, health `GET /health/status/live`) + `aws_lb_listener.http` (`:80`). (`security-groups.tf`) |
+| Security groups  | `aws_security_group.alb` (inbound 80 from `0.0.0.0/0`); `aws_security_group.task` (inbound 8080 from the `alb` SG only). (`security-groups.tf`) |
+| IAM              | `aws_iam_role.task_execution` (managed `AmazonECSTaskExecutionRolePolicy` + inline `secretsmanager:GetSecretValue` on the DB secret) + `aws_iam_role.task` (empty). (`iam.tf`) |
+| Logs             | `aws_cloudwatch_log_group` `/ecs/commerce-api` + `/ecs/commerce-utils`, 30-day retention; `awslogs` driver in both task defs. (`logs.tf`) |
 
-### Planned (not yet implemented)
+### Still pending
 
-| Concern         | Resource |
-|-----------------|----------|
-| Cluster         | `aws_ecs_cluster` |
-| API service     | `aws_ecs_service` + `aws_ecs_task_definition` — long-running, attached to ALB target group. Container port `8080`. Healthcheck `GET /health/status/live`. |
-| Migrations      | `aws_ecs_task_definition` for the `utils` image — one-shot, triggered by CI before each API deploy. Idempotent via GORM AutoMigrate. |
-| Load balancer   | `aws_lb` (internet-facing) in default VPC's public subnets + `aws_lb_target_group` + `aws_lb_listener`. HTTP:80 initially; ACM cert + HTTPS:443 once a final domain is picked. |
-| Security groups | `alb` (inbound 80/443 from `0.0.0.0/0`); `task` (inbound 8080 from `alb` SG only); RDS SG patched to accept 5432 from `task` SG (when ADR-004 lands). |
-| IAM             | Task execution role (ECR pull + Secrets Manager read + CloudWatch Logs write); task role (empty for now). |
-| Logs            | `aws_cloudwatch_log_group` per task family; `awslogs` driver in the task def. |
+- **First image push + bump `api_desired_count`** above 0. Until an image exists in `commerce-api-registry` the service has nothing to run.
+- **HTTPS:443 listener + ACM cert.** HTTP:80 only today; needs the final domain.
+- **RDS SG ingress from the `task` SG.** Today RDS is still public, so the task reaches it over the internet; the SG-scoped path lands with ADR-004.
+- **CI OIDC role** for GitHub Actions (deferred). `task_execution_role_arn` is already exported for its future `iam:PassRole`.
 
 ## Inputs the Go service expects
 
-Source of truth: `commerce-api/api/configs/dev.env.example` and `commerce-api/docs/project-notes/facts.md`. Snapshot at time of writing:
+These are now rendered into `aws_ecs_task_definition.api` (`ecs-api.tf`) — plain values as `environment`, `DB_PASSWORD` via the `secrets` block. Source of truth: `commerce-api/api/configs/dev.env.example` and `commerce-api/docs/project-notes/facts.md`. Snapshot at time of writing:
 
 | Var                                                                | Source on AWS |
 |--------------------------------------------------------------------|---------------|
@@ -62,7 +61,9 @@ Source of truth: `commerce-api/api/configs/dev.env.example` and `commerce-api/do
 | `AUTH_DOMAIN`                                                      | Plain env (dev tenant: `dev-y7vm6nwrj5uw2n2e.us.auth0.com`) |
 | `AUTH_AUDIENCE`                                                    | Plain env (`urn:commerce-api`) |
 
-`dev.env.example` in the commerce-api repo is the canonical list — diff against it when adding or removing config keys.
+`dev.env.example` in the commerce-api repo is the canonical list — diff against it when adding or removing config keys. `DB_SCHEMA = "commerce"`, `DB_SSLMODE = "require"`, and `CORS_ALLOWED_ORIGIN = "*"` are current placeholders set in `ecs-api.tf` — confirm them against `dev.env.example`.
+
+Workspace-local variables (`variables.tf`): `region`, `rds_password` (Variable Set), `image_tag` (bootstrap tag, default `latest`; real deploys are sha-tagged by CI), `cors_allowed_origin` (default `*`), `api_desired_count` (default `0` until the first image is pushed).
 
 ## Dependencies
 
@@ -79,7 +80,7 @@ Per [ADR-005](../../docs/project-notes/decisions.md#adr-005--per-app-db-bootstra
 - `ALL PRIVILEGES` for the role on the `public` + `commerce` schemas.
 - A Secrets Manager secret at `/commerce-api/rds/psql` containing the app's connection bundle (host / port / username / password / database).
 
-Subsequent schema changes are AutoMigrate-driven via the `utils` ECS task once it's wired. The earlier "allow your IP, run psql from your laptop, revert" recipe is gone — superseded by ADR-005.
+Subsequent schema changes are AutoMigrate-driven via the `utils` ECS task (`aws_ecs_task_definition.utils`, run by CI). The earlier "allow your IP, run psql from your laptop, revert" recipe is gone — superseded by ADR-005.
 
 ## CI/CD shape (lives in commerce-api repo, not here)
 
@@ -88,11 +89,11 @@ GitHub Actions workflow in the `commerce-api` repo, triggered on push to `main`:
 1. `go test ./...`
 2. Build `api` and `utils` Docker images
 3. Auth to ECR via OIDC (no long-lived AWS keys in GitHub)
-4. Push both images with `latest` + `${{ github.sha }}` tags
-5. `aws ecs run-task` for `utils` — wait, fail the workflow if migration exits non-zero
-6. `aws ecs update-service --force-new-deployment` for the API service
+4. Push both images tagged with `${{ github.sha }}` — **sha-only, no moving `latest`** (per the ecr lifecycle policy / ADR-006). The repos are `IMMUTABLE`, so a sha tag is pushed exactly once.
+5. Register a new task-def revision pointing at that sha and `aws ecs run-task` for `utils` — wait, fail the workflow if migration exits non-zero
+6. Update the API service to the new revision (`aws ecs update-service`). The service's `ignore_changes = [task_definition, desired_count]` means Terraform won't revert this on its next apply.
 
-The IAM role this OIDC trust assumes is provisioned here (planned). Document its ARN as an output so the Go repo can pin it.
+The CI OIDC role this trust assumes is still **planned** (deferred). The task **execution** role is built and its ARN is exported as `task_execution_role_arn` — the OIDC role will need `iam:PassRole` on it.
 
 ## Domain
 

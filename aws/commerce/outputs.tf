@@ -1,0 +1,33 @@
+# ---------------------------------------------------------------------------
+# Outputs consumed by humans and by CI in the commerce-api repo.
+# ---------------------------------------------------------------------------
+
+# Where to point the api.khakpouri.me CNAME, and the host to smoke-test against.
+output "alb_dns_name" {
+  description = "Public DNS name of the commerce ALB."
+  value       = aws_lb.commerce_alb.dns_name
+}
+
+# Image push targets for the CI build step (docker push <url>:<sha>).
+output "api_repository_url" {
+  description = "ECR repository URL for the commerce-api image."
+  value       = module.api_registry.repository_url
+}
+
+output "utils_repository_url" {
+  description = "ECR repository URL for the commerce-utils image."
+  value       = module.utils_registry.repository_url
+}
+
+# Needed by the future CI OIDC role's iam:PassRole (it must be allowed to pass
+# the execution role to ECS when registering task definitions).
+output "task_execution_role_arn" {
+  description = "ARN of the ECS task execution role."
+  value       = aws_iam_role.task_execution.arn
+}
+
+# App credentials secret on the shared RDS instance (host/user/password/...).
+output "db_secret_arn" {
+  description = "ARN of the commerce app DB credentials secret."
+  value       = module.database.postgresql_secret_arn
+}

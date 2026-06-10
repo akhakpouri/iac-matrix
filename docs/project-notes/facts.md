@@ -4,7 +4,7 @@
 
 | Directory | Provider | Purpose |
 |-----------|----------|---------|
-| `aws/`    | AWS      | VPC, S3, shared RDS PostgreSQL, per-product compute (ECR + logical DB + ECS in flight) |
+| `aws/`    | AWS      | VPC, S3, shared RDS PostgreSQL, per-product compute (ECR + logical DB + ECS/ALB) |
 | `auth0/`  | Auth0    | Tenant config: APIs, M2M clients, SPA clients, Universal Login |
 
 See ADR-001 for the per-provider split rationale.
@@ -13,15 +13,15 @@ See ADR-001 for the per-provider split rationale.
 
 | Workspace                    | Path                  | Project            | Notes |
 |------------------------------|-----------------------|--------------------|-------|
-| `platform-shared`            | `aws/`                | `platform-shared`  | Owns the VPC and the single shared RDS instance. Exports endpoint/SG via outputs. |
-| `commerce-api`               | `aws/commerce/api/`   | `commerce-api`     | Owns commerce's ECR repo + logical DB on the shared instance. Reads `platform-shared` via `terraform_remote_state`. |
+| `platform-shared`            | `aws/`                | `platform-shared`  | Owns the VPC and the single shared RDS instance. Exports endpoint/SG + VPC/subnets via outputs. |
+| `commerce`                   | `aws/commerce/`       | `commerce`         | Whole commerce product (api + utils, ADR-006): ECR repos, logical DB, ECS/ALB/IAM/logs. Reads `platform-shared` via `terraform_remote_state`. |
 | `auth0`                      | `auth0/`              | (none)             | Auth0 tenant — sits ungrouped under the org. |
 
 Org: `akhakpouri`.
 
 ### Sensitive variables (workspace-scoped)
 
-- `rds_password` — master password for the shared RDS instance. Defined once as a TFC **Variable Set** and attached to both `platform-shared` and `commerce-api` so rotation is a single edit.
+- `rds_password` — master password for the shared RDS instance. Defined once as a TFC **Variable Set** and attached to both `platform-shared` and `commerce` so rotation is a single edit.
 - `auth0_client_id`, `auth0_client_secret`, `domain` — set as workspace variables on the `auth0` workspace.
 
 Sensitive values are never committed. Gitignored `*.tfvars` is permitted for local-execution workspaces, but the persistent store is TFC workspace vars / Variable Sets.
@@ -31,8 +31,8 @@ Sensitive values are never committed. Gitignored `*.tfvars` is permitted for loc
 | Component                                              | Version    | Pinned in                                                           |
 |--------------------------------------------------------|------------|---------------------------------------------------------------------|
 | Terraform                                              | `>= 1.14.0`| Root `CLAUDE.md`, `aws/CLAUDE.md`                                   |
-| `hashicorp/aws`                                        | unpinned   | `aws/terraform.tf`, `aws/commerce/api/terraform.tf`                 |
-| `cyrilgdn/postgresql`                                  | `~> 1.25`  | `aws/modules/db/terraform.tf`, `aws/commerce/api/terraform.tf`      |
+| `hashicorp/aws`                                        | unpinned   | `aws/terraform.tf`, `aws/commerce/terraform.tf`                     |
+| `cyrilgdn/postgresql`                                  | `~> 1.25`  | `aws/modules/db/terraform.tf`, `aws/commerce/terraform.tf`          |
 | `hashicorp/random`                                     | unpinned   | `aws/modules/db/terraform.tf`                                       |
 | `terraform-aws-modules/vpc/aws`                        | `6.6.1`    | `aws/main.tf` (root VPC). `aws/modules/rds/main.tf` uses unpinned reference for the nested VPC — to be removed when ADR-004 lands. |
 | `terraform-aws-modules/secrets-manager/aws`            | `~> 2.1`   | `aws/modules/db/main.tf`                                            |
@@ -82,6 +82,9 @@ Owned by `aws/modules/rds/`, instantiated once as `module "rds"` in `aws/main.tf
 | `postgres_endpoint`     | `address:port`                   |
 | `master_username`       | master user on the instance      |
 | `rds_security_group_id` | SG id (for app workspaces to add their task SGs to under ADR-004) |
+| `vpc_id`                | shared VPC id (for product ALB/ECS networking) |
+| `public_subnet_ids`     | shared VPC public subnet ids (list) |
+| `private_subnet_ids`    | shared VPC private subnet ids (list) |
 
 ### Shared modules (consumed by product workspaces via `git::` source)
 
@@ -92,18 +95,28 @@ Owned by `aws/modules/rds/`, instantiated once as `module "rds"` in `aws/main.tf
 | `modules/ecr`   | Per-app ECR repository. Image tag immutability + scan-on-push + AES256.  |
 | `modules/s3`    | Generic S3 bucket. Currently unused at the workspace level.              |
 
-## AWS — `commerce-api` workspace (`aws/commerce/api/`)
+## AWS — `commerce` workspace (`aws/commerce/`)
+
+Whole commerce product in one workspace (api + utils, ADR-006). Reads `platform-shared` via `data.terraform_remote_state.platform`.
 
 | Key                       | Value                                                                  |
 |---------------------------|------------------------------------------------------------------------|
 | Region                    | `us-east-1`                                                            |
-| RDS connection info       | Read from `platform-shared` outputs via `terraform_remote_state`       |
-| ECR repository            | `commerce-api-registry`                                                |
+| RDS / VPC connection info | Read from `platform-shared` outputs via `terraform_remote_state`       |
+| ECR repositories          | `commerce-api-registry`, `commerce-utils-registry` (`module.api_registry` / `module.utils_registry`) |
 | Logical database name     | `commerce`                                                             |
 | Owner role                | `commerce` (login; password generated by `modules/db`)                  |
 | Schemas granted to owner  | `public`, `commerce`                                                   |
 | Secret name (app creds)   | `/commerce-api/rds/psql` in AWS Secrets Manager                        |
-| Module source ref         | `?ref=feature/issue-13` (will flip to `main`, then a pinned tag, on merge) |
+| ECS cluster               | `commerce-cluster`                                                     |
+| API service / task def    | `aws_ecs_service.api` + `aws_ecs_task_definition.api` (Fargate, port 8080, `api_desired_count` default 0) |
+| Utils task def            | `aws_ecs_task_definition.utils` (one-shot, no service; `aws ecs run-task` by CI) |
+| Load balancer             | `commerce-alb` (internet-facing, public subnets) → `commerce-target-group` (`ip`, :8080, health `/health/status/live`) → `:80` listener |
+| Security groups           | `commerce-alb-sg` (80 from `0.0.0.0/0`); `commerce-task-sg` (8080 from alb SG only) |
+| IAM roles                 | `commerce-task-execution` (ECR pull + logs + Secrets Manager read), `commerce-task` (empty) |
+| Log groups                | `/ecs/commerce-api`, `/ecs/commerce-utils` (30-day retention)         |
+| Image tagging             | sha-only (no `latest`); CI pushes `${git.sha}`, service `ignore_changes` on task def/count |
+| Module source ref         | `?ref=main`                                                            |
 
 ### Sensitive variables on this workspace
 
