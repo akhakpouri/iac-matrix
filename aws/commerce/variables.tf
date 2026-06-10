@@ -37,3 +37,13 @@ variable "api_desired_count" {
   type        = number
   default     = 0
 }
+
+# GitHub repo (<org>/<repo>) allowed to assume the CI role via OIDC. This is the
+# security boundary for CI auth — set it to the commerce-api app repo exactly.
+# VERIFY this value; a wrong repo/owner either locks CI out or lets the wrong
+# repo in.
+variable "github_repository" {
+  description = "GitHub <org>/<repo> permitted to assume the commerce-ci role."
+  type        = string
+  default     = "akhakpouri/commerce-api"
+}
