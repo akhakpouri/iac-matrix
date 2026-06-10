@@ -15,7 +15,7 @@ The two domains are operationally independent — separate Terraform Cloud works
 
 ## Backend & secrets
 
-- Remote backend: **Terraform Cloud**, organization `akhakpouri`. Each top-level module is its own workspace (`auth0`, `learn-terraform-aws`, and any future per-product workspaces); `plan` / `apply` execute remotely. Run `terraform login` once before `init` anywhere.
+- Remote backend: **Terraform Cloud**, organization `akhakpouri`. Workspaces: `platform-shared` (`aws/`), `commerce` (`aws/commerce/`, one per product — ADR-006), `auth0`, and any future per-product workspaces; `plan` / `apply` execute remotely. Run `terraform login` once before `init` anywhere.
 - Sensitive vars (Auth0 client secrets, DB passwords, future cloud creds) live as workspace variables in TFC or in gitignored `*.tfvars` / `*.auto.tfvars` files. **Never commit any `.tfvars` file.** Never echo secrets into logs, PR descriptions, or terminal output.
 - Required: Terraform >= 1.14.0.
 

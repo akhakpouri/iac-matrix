@@ -175,3 +175,44 @@ module "database" {
 - **Module changes require commit + push** (git source). For an unstable module, pin the ref to a tag (`?ref=v0.1.0`) per app so upgrades are explicit.
 - **ADR-004's "manual psql bootstrap" bullet** (Security-posture section, "per-product DB users created via the manual bootstrap…") is superseded. The networking and SG-restriction parts of ADR-004 are untouched and still pending.
 - **`aws/commerce/CLAUDE.md`'s "RDS bootstrap" section** needs to be rewritten to point at this module instead of describing the four `CREATE DATABASE`/`CREATE USER`/`GRANT`/`CREATE SCHEMA` statements.
+
+## ADR-006 — One `commerce` workspace for the whole product; utils is not its own workspace
+
+**Date:** 2026-06-09
+**Status:** Accepted
+**Amends:** The "each subdirectory is its own Terraform Cloud workspace" framing in `aws/commerce/README.md` and `aws/commerce/CLAUDE.md`. Does not affect ADR-001 (which governs the top-level *provider* split, a coarser boundary).
+
+The commerce product deploys from a **single** TFC workspace, `commerce` (renamed in-place from `commerce-api`), with working directory `aws/commerce/`. That one workspace owns the long-running API service, the one-shot `utils` migration/backfill task, **both** ECR repos (`commerce-api-registry`, `commerce-utils-registry`), the shared ECS cluster, IAM, networking, and the per-app logical DB bootstrap (ADR-005). `utils` is a set of `.tf` files in this workspace — **not** a sibling `commerce-utils` workspace, and `aws/commerce/utils/` as a separate root module is dropped.
+
+### Rationale
+
+- **`utils` is an intra-product sidecar, not an independent product.** It runs migrations against the *same* `commerce` logical DB this workspace creates, pulls the *same* `/commerce-api/rds/psql` secret, and shares the ECS cluster, task execution role, subnets, and `task` SG with the API service. The only thing that differs between the API and utils task definitions is the image and the command.
+- **Splitting would manufacture a `terraform_remote_state` web.** A separate `commerce-utils` workspace would have to read the cluster ARN, execution-role ARN, secret ARN, and SG/subnet IDs out of `commerce`'s state, plus carry its own `shared-rds-master` Variable Set attachment and its own apply ordering — tight coupling between two halves of one deploy unit, with no isolation benefit to show for it.
+- **They deploy in lockstep.** CI builds both images at the same git sha, runs the utils task, then force-redeploys the API service (see `aws/commerce/CLAUDE.md`). There is no lifecycle in which utils applies independently of the API.
+- **Solo dev, single (`prod`) environment.** Per-service workspaces multiply Variable Set attachments, applies, and remote_state plumbing — pure operational overhead at this scale.
+- **This is a different axis from ADR-001.** ADR-001 separates state by *provider* (aws vs auth0) because those have zero overlap. ADR-006 is about granularity *within* a product, where the resources overlap heavily. The two coexist.
+
+### Layout after consolidation
+
+```
+aws/commerce/                # working dir of the `commerce` workspace
+├── terraform.tf             # cloud { name = "commerce", project = "commerce" }
+├── providers.tf             # aws; postgresql (from remote_state + var.rds_password)
+├── remote-state.tf          # data.terraform_remote_state.rds → platform-shared
+├── variables.tf             # region, rds_password
+├── registry.tf              # module "api_registry" + module "utils_registry"
+├── database.tf              # module "database" (ADR-005)
+├── ecs-cluster.tf / ecs-api.tf / ecs-utils.tf
+├── alb.tf / security-groups.tf / iam.tf / logs.tf
+└── outputs.tf
+```
+
+`utils` has a task definition but **no `aws_ecs_service`** — it is invoked one-shot via `aws ecs run-task` in CI.
+
+### Consequences
+
+- **Bigger blast radius / single state.** One `terraform apply` touches the API service and the utils task together. Acceptable: a one-shot task def + an ECR repo are low-risk, and the API resources already dominate the state.
+- **Rename must precede `init`.** The TFC workspace is renamed `commerce-api → commerce` **in the UI first** (Settings → General) to preserve existing state + run history (the already-applied ECR repo, DB, role, and secret). The cloud block already points at `commerce`; running `terraform init` against a not-yet-renamed workspace would bind to a fresh empty `commerce` and propose recreating those resources. The TFC working directory setting moves `aws/commerce/api → aws/commerce`.
+- **One state move on the renamed module.** `terraform state mv module.container_registry module.api_registry` so the existing API repo is treated as a rename, not a destroy/create. `module.database` keeps its name. A clean plan shows only the new `commerce-utils-registry` (+ any new ECS/IAM) and no destroys of the DB/role/secret.
+- **The "add a commerce service" recipe changes.** Adding a worker/cron to commerce is now a new `.tf` file (or local module) in this workspace, not a new TFC workspace. `aws/commerce/README.md` and `CLAUDE.md` (workspace tables, wiring diagram, "Adding another commerce workspace" section) are updated to match.
+- **Reversible when a real boundary appears.** If a future commerce component gains a genuinely independent lifecycle, ownership, or access boundary (e.g. a long-running worker deployed by someone else), promote its sub-tree to its own workspace then. Premature splitting for a one-shot migration task is the thing this ADR avoids.
