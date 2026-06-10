@@ -13,5 +13,8 @@ terraform {
     postgresql = {
       source = "cyrilgdn/postgresql"
     }
+    tls = {
+      source = "hashicorp/tls"
+    }
   }
 }

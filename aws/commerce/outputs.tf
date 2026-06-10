@@ -31,3 +31,10 @@ output "db_secret_arn" {
   description = "ARN of the commerce app DB credentials secret."
   value       = module.database.postgresql_secret_arn
 }
+
+# ARN the GitHub Actions workflow assumes via OIDC. Not sensitive — store it as
+# a GitHub Actions variable (vars.AWS_CI_ROLE_ARN), not a secret.
+output "ci_role_arn" {
+  description = "ARN of the commerce-ci role for GitHub Actions OIDC."
+  value       = aws_iam_role.ci.arn
+}
