@@ -97,8 +97,10 @@ resource "aws_iam_openid_connect_provider" "github" {
 
 # The CI role. The trust policy is the security boundary: only the OIDC provider
 # may assume it, only with the sts.amazonaws.com audience, and only from this
-# repo's main branch (the `sub` condition). A loose `sub` would let other repos
-# or branches in — keep it exact.
+# repo's `aws` deployment environment (the `sub` condition). The publish-images
+# workflow runs under `environment: aws`, so its OIDC token `sub` is
+# `repo:<repo>:environment:aws` — NOT a branch/tag ref. A loose `sub` would let
+# other repos or environments in — keep it exact.
 resource "aws_iam_role" "ci" {
   name = "commerce-ci"
   assume_role_policy = jsonencode({
@@ -109,7 +111,7 @@ resource "aws_iam_role" "ci" {
       Action    = "sts:AssumeRoleWithWebIdentity"
       Condition = {
         StringEquals = { "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com" }
-        StringLike   = { "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:ref:refs/heads/main" }
+        StringLike   = { "token.actions.githubusercontent.com:sub" = "repo:${var.github_repository}:environment:aws" }
       }
     }]
   })
