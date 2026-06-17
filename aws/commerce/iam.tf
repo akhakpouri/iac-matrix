@@ -152,38 +152,39 @@ resource "aws_iam_role_policy" "ci_ecr_push" {
   })
 }
 
-# ----- Phase 2 (deploy) — uncomment when you add the deploy steps -----------
+# ----- Phase 2 (deploy) -----------------------------------------------------
 # Lets CI register a task-def revision, run the utils migration, and roll the
 # API service. iam:PassRole is required for RegisterTaskDefinition/RunTask to
-# hand the task its execution + task roles — deploys fail silently without it.
-#
-# resource "aws_iam_role_policy" "ci_deploy" {
-#   name = "ecs-deploy"
-#   role = aws_iam_role.ci.id
-#   policy = jsonencode({
-#     Version = "2012-10-17"
-#     Statement = [
-#       {
-#         Sid    = "EcsDeploy"
-#         Effect = "Allow"
-#         Action = [
-#           "ecs:RegisterTaskDefinition",
-#           "ecs:RunTask",
-#           "ecs:UpdateService",
-#           "ecs:DescribeServices",
-#           "ecs:DescribeTasks",
-#         ]
-#         Resource = "*" # RegisterTaskDefinition has no resource-level support
-#       },
-#       {
-#         Sid      = "PassTaskRoles"
-#         Effect   = "Allow"
-#         Action   = "iam:PassRole"
-#         Resource = [aws_iam_role.task_execution.arn, aws_iam_role.task.arn]
-#         Condition = {
-#           StringEquals = { "iam:PassedToService" = "ecs-tasks.amazonaws.com" }
-#         }
-#       },
-#     ]
-#   })
-# }
+# hand the task its execution + task roles — deploys fail without it.
+# Enabled 2026-06-17 alongside the `deploy` job in commerce-api publish-images.yml.
+resource "aws_iam_role_policy" "ci_deploy" {
+  name = "ecs-deploy"
+  role = aws_iam_role.ci.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "EcsDeploy"
+        Effect = "Allow"
+        Action = [
+          "ecs:RegisterTaskDefinition",
+          "ecs:DescribeTaskDefinition",
+          "ecs:RunTask",
+          "ecs:UpdateService",
+          "ecs:DescribeServices",
+          "ecs:DescribeTasks",
+        ]
+        Resource = "*" # RegisterTaskDefinition has no resource-level support
+      },
+      {
+        Sid      = "PassTaskRoles"
+        Effect   = "Allow"
+        Action   = "iam:PassRole"
+        Resource = [aws_iam_role.task_execution.arn, aws_iam_role.task.arn]
+        Condition = {
+          StringEquals = { "iam:PassedToService" = "ecs-tasks.amazonaws.com" }
+        }
+      },
+    ]
+  })
+}
