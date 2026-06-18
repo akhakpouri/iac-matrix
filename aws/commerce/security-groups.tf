@@ -13,9 +13,12 @@
 
 # Public front door: anyone on the internet may reach the ALB on :80 (redirected
 # to HTTPS) and :443.
+# NOTE: `description` is IMMUTABLE on a security group — changing it forces a
+# replace, which can't complete while the SG is attached to the ALB. Leave it as
+# the original string; the added 443 ingress below is an in-place update.
 resource "aws_security_group" "alb" {
   name        = "commerce-alb-sg"
-  description = "Allow inbound HTTP/HTTPS traffic from the internet"
+  description = "Allow inbound HTTP traffic from the internet"
   vpc_id      = data.terraform_remote_state.platform.outputs.vpc_id
 
   ingress {
