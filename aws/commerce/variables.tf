@@ -47,3 +47,18 @@ variable "github_repository" {
   type        = string
   default     = "akhakpouri/commerce-api"
 }
+
+# Public hostname the API is served at (ACM cert subject + Route 53 record).
+variable "api_hostname" {
+  description = "Public DNS name for the commerce API."
+  type        = string
+  default     = "commerce.godevmatrix.me"
+}
+
+# Route 53 hosted zone for the domain. Hand-managed outside this workspace — we
+# only read it and add the api record + ACM validation records into it.
+variable "hosted_zone_id" {
+  description = "Route 53 hosted zone ID for the API domain."
+  type        = string
+  default     = "Z041625321OQNKHW5WH2C"
+}

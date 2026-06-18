@@ -6,16 +6,16 @@ Sibling-scoped to `aws/`. The parent `aws/CLAUDE.md` covers shared AWS infrastru
 
 ## Status
 
-**Built — pending first apply** (as of 2026-06-10). The full `commerce` workspace is written and `terraform validate`-clean: both ECR repos, the logical DB + role + secret, the ECS cluster, the API service + task def, the one-shot `utils` task def, the ALB + target group + listener, the two security groups, the IAM roles, and the CloudWatch log groups. Not yet applied to AWS, and no image has been pushed — the API service defaults to `api_desired_count = 0` until CI ships the first sha-tagged image (see CI/CD shape below). The Go service in the `commerce-api` repo has the auth0 integration and scope enforcement done.
+**Live** (as of 2026-06-18). Applied and serving at **`https://commerce.godevmatrix.me`** — image pushed by CI, the API service is running, and the ALB terminates TLS (HTTP→HTTPS redirect). The full workspace is applied: both ECR repos, the logical DB + role + secret, the ECS cluster, the API service + task def, the one-shot `utils` task def, the ALB + target group + HTTP/HTTPS listeners, the ACM cert + Route 53 alias record, the two security groups, the IAM roles (incl. the `commerce-ci` OIDC role), and the CloudWatch log groups. The Go service in the `commerce-api` repo has the auth0 integration and scope enforcement done.
 
 ## Workspace
 
 The whole commerce product deploys from a single TFC workspace, **`commerce`** (org `akhakpouri`, project `commerce`), working directory `aws/commerce/`. `api` and `utils` are concerns within it, not separate workspaces — see [ADR-006](../../docs/project-notes/decisions.md#adr-006--one-commerce-workspace-for-the-whole-product-utils-is-not-its-own-workspace).
 
-| Component   | Status                 | Notes |
-|-------------|------------------------|-------|
-| API service | Built — pending deploy | Terraform complete: ECS service + task def, ALB, IAM, logs, SGs, `commerce-api-registry` ECR, logical DB + secret. Awaiting first image push; `api_desired_count = 0` until then. |
-| `utils`     | Built — pending deploy | One-shot migration task def + `commerce-utils-registry` ECR. No service — invoked via `aws ecs run-task` by CI. |
+| Component   | Status | Notes |
+|-------------|--------|-------|
+| API service | Live   | Running ECS Fargate service behind the ALB at `https://commerce.godevmatrix.me`; image deployed by CI. |
+| `utils`     | Live   | One-shot migration task def + `commerce-utils-registry` ECR. No service — invoked via `aws ecs run-task` by CI. |
 
 ## Scope
 
@@ -34,15 +34,15 @@ Goal: one ALB-fronted ECS Fargate service running the API container, with databa
 | Cluster          | `aws_ecs_cluster.commerce_cluster`. (`ecs-cluster.tf`) |
 | API service      | `aws_ecs_service.api` + `aws_ecs_task_definition.api` — Fargate/awsvpc, port `8080`, public subnets + `assign_public_ip`, attached to the ALB target group. `ignore_changes = [task_definition, desired_count]` (CI owns deploys). (`ecs-api.tf`) |
 | Migrations       | `aws_ecs_task_definition.utils` — one-shot, **no service**; `aws ecs run-task` by CI. Idempotent via GORM AutoMigrate. (`ecs-utils.tf`) |
-| Load balancer    | `aws_lb.commerce_alb` (internet-facing, public subnets) + `aws_lb_target_group.commerce_api` (`target_type = "ip"`, `:8080`, health `GET /health/status/live`) + `aws_lb_listener.http` (`:80`). (`security-groups.tf`) |
-| Security groups  | `aws_security_group.alb` (inbound 80 from `0.0.0.0/0`); `aws_security_group.task` (inbound 8080 from the `alb` SG only). (`security-groups.tf`) |
+| Load balancer    | `aws_lb.commerce_alb` (internet-facing, public subnets) + `aws_lb_target_group.commerce_api` (`target_type = "ip"`, `:8080`, health `GET /health/status/live`) + `aws_lb_listener.http` (`:80`, **301-redirects to HTTPS**) + `aws_lb_listener.https` (`:443`, TLS 1.3, forwards to the target group). (`security-groups.tf`) |
+| Security groups  | `aws_security_group.alb` (inbound 80 + 443 from `0.0.0.0/0`); `aws_security_group.task` (inbound 8080 from the `alb` SG only). (`security-groups.tf`) |
+| Domain + TLS     | `aws_acm_certificate.commerce` (DNS-validated) for `commerce.godevmatrix.me` + validation records + `aws_route53_record.api` (alias A → ALB) in the hand-managed `godevmatrix.me` zone. (`dns-tls.tf`) |
 | IAM              | `aws_iam_role.task_execution` (managed `AmazonECSTaskExecutionRolePolicy` + inline `secretsmanager:GetSecretValue` on the DB secret) + `aws_iam_role.task` (empty). (`iam.tf`) |
 | Logs             | `aws_cloudwatch_log_group` `/ecs/commerce-api` + `/ecs/commerce-utils`, 30-day retention; `awslogs` driver in both task defs. (`logs.tf`) |
 
 ### Still pending
 
 - **First image push + bump `api_desired_count`** above 0. Until an image exists in `commerce-api-registry` the service has nothing to run.
-- **HTTPS:443 listener + ACM cert.** HTTP:80 only today; needs the final domain.
 - **RDS SG ingress from the `task` SG.** Today RDS is still public, so the task reaches it over the internet; the SG-scoped path lands with ADR-004.
 - **CI OIDC role** for GitHub Actions (deferred). `task_execution_role_arn` is already exported for its future `iam:PassRole`.
 
@@ -97,7 +97,7 @@ The CI OIDC role this trust assumes is still **planned** (deferred). The task **
 
 ## Domain
 
-`api.khakpouri.me` is the placeholder DNS target — a CNAME to the ALB's DNS name. The final commerce-api domain hasn't been chosen yet. Swapping later is a CNAME flip + an ACM cert; no infrastructure shape change.
+The API is served at **`https://commerce.godevmatrix.me`** (output `api_url`). An `aws_route53_record` alias A record points the hostname at the ALB, and an ACM cert (DNS-validated) terminates TLS on the `:443` listener; `:80` 301-redirects to HTTPS. The `godevmatrix.me` hosted zone (`Z041625321OQNKHW5WH2C`) is managed outside this workspace — Terraform only reads it and writes the api record + cert-validation records into it. Changing the hostname is a `var.api_hostname` edit (+ a new cert validation). The cert must stay in the ALB's region (`us-east-1`).
 
 ## Out of scope (lives elsewhere)
 

@@ -8,10 +8,10 @@ For deployment shape, scope, and CI/CD, see [`CLAUDE.md`](CLAUDE.md). This READM
 
 Single TFC workspace **`commerce`** (org `akhakpouri`, project `commerce`), working directory `aws/commerce/`.
 
-| Component   | Status                 | Purpose |
-|-------------|------------------------|---------|
-| API service | Built — pending deploy | ALB + ECS Fargate API service, `commerce-api-registry` ECR repo, logical DB + owner role + Secrets Manager secret on the shared RDS instance. Awaiting first image push. |
-| `utils`     | Built — pending deploy | One-shot utility ECS task (migrations, backfills) + `commerce-utils-registry` ECR repo. Run via `aws ecs run-task` by CI. |
+| Component   | Status | Purpose |
+|-------------|--------|---------|
+| API service | Live   | ALB (HTTPS at `https://commerce.godevmatrix.me`) + ECS Fargate API service, `commerce-api-registry` ECR repo, logical DB + owner role + Secrets Manager secret on the shared RDS instance. |
+| `utils`     | Live   | One-shot utility ECS task (migrations, backfills) + `commerce-utils-registry` ECR repo. Run via `aws ecs run-task` by CI. |
 
 ## How the workspace is wired
 
@@ -39,7 +39,7 @@ Single TFC workspace **`commerce`** (org `akhakpouri`, project `commerce`), work
    └── aws_ecr_repository "commerce-utils-registry"
 ```
 
-On top of the above, the workspace also builds the compute/serving layer: an ECS cluster, the API service + a one-shot `utils` task definition, an internet-facing ALB (target group + :80 listener), the `alb`/`task` security groups, IAM roles, and CloudWatch log groups. The ALB and tasks live in `platform-shared`'s VPC/subnets (read via the same remote state). The ECS task pulls the database secret at task-start time from `/commerce-api/rds/psql`, so the Go service never sees the RDS master credentials.
+On top of the above, the workspace also builds the compute/serving layer: an ECS cluster, the API service + a one-shot `utils` task definition, an internet-facing ALB (target group + `:80`→`:443` redirect + HTTPS listener), an ACM cert + Route 53 alias record for `commerce.godevmatrix.me`, the `alb`/`task` security groups, IAM roles (incl. the `commerce-ci` OIDC role), and CloudWatch log groups. The ALB and tasks live in `platform-shared`'s VPC/subnets (read via the same remote state). The ECS task pulls the database secret at task-start time from `/commerce-api/rds/psql`, so the Go service never sees the RDS master credentials.
 
 ## Variables
 
@@ -52,6 +52,9 @@ The workspace reads almost everything from `platform-shared` via remote state. T
 | `image_tag`         | Default `latest`                                 | Bootstrap tag for the task-def baseline. Real deploys are sha-tagged by CI; the service ignores task-def changes. |
 | `cors_allowed_origin` | Default `*`                                     | Placeholder until a storefront/admin domain exists. |
 | `api_desired_count` | Default `0`                                      | Number of API tasks. `0` until the first image is pushed; bump to 1 after CI's first deploy. |
+| `github_repository` | Default `akhakpouri/commerce-api`                | `<org>/<repo>` permitted to assume the `commerce-ci` OIDC role. Security boundary for CI auth. |
+| `api_hostname`      | Default `commerce.godevmatrix.me`                | Public DNS name; ACM cert subject + Route 53 record. |
+| `hosted_zone_id`    | Default `Z041625321OQNKHW5WH2C`                  | Route 53 zone for `godevmatrix.me` (hand-managed; TF only writes the api + cert-validation records). |
 
 ## Adding another commerce service
 

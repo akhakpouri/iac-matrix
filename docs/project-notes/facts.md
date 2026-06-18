@@ -111,8 +111,9 @@ Whole commerce product in one workspace (api + utils, ADR-006). Reads `platform-
 | ECS cluster               | `commerce-cluster`                                                     |
 | API service / task def    | `aws_ecs_service.api` + `aws_ecs_task_definition.api` (Fargate, port 8080, `api_desired_count` default 0) |
 | Utils task def            | `aws_ecs_task_definition.utils` (one-shot, no service; `aws ecs run-task` by CI) |
-| Load balancer             | `commerce-alb` (internet-facing, public subnets) → `commerce-target-group` (`ip`, :8080, health `/health/status/live`) → `:80` listener |
-| Security groups           | `commerce-alb-sg` (80 from `0.0.0.0/0`); `commerce-task-sg` (8080 from alb SG only) |
+| Load balancer             | `commerce-alb` (internet-facing, public subnets) → `commerce-target-group` (`ip`, :8080, health `/health/status/live`); `:80` listener 301-redirects to `:443` (HTTPS, TLS 1.3, ACM cert) |
+| Public URL / domain       | `https://commerce.godevmatrix.me` — ACM cert (DNS-validated) + Route 53 alias A record → ALB, in the hand-managed `godevmatrix.me` zone (`Z041625321OQNKHW5WH2C`) |
+| Security groups           | `commerce-alb-sg` (80 + 443 from `0.0.0.0/0`); `commerce-task-sg` (8080 from alb SG only) |
 | IAM roles                 | `commerce-task-execution` (ECR pull + logs + Secrets Manager read), `commerce-task` (empty) |
 | Log groups                | `/ecs/commerce-api`, `/ecs/commerce-utils` (30-day retention)         |
 | Image tagging             | sha-only (no `latest`); CI pushes `${git.sha}`, service `ignore_changes` on task def/count |

@@ -2,10 +2,16 @@
 # Outputs consumed by humans and by CI in the commerce-api repo.
 # ---------------------------------------------------------------------------
 
-# Where to point the api.khakpouri.me CNAME, and the host to smoke-test against.
+# Raw ALB DNS name (the alias target). Normally you hit api_url instead.
 output "alb_dns_name" {
   description = "Public DNS name of the commerce ALB."
   value       = aws_lb.commerce_alb.dns_name
+}
+
+# The public, TLS-terminated URL for the API.
+output "api_url" {
+  description = "Public HTTPS URL of the commerce API."
+  value       = "https://${var.api_hostname}"
 }
 
 # Image push targets for the CI build step (docker push <url>:<sha>).
