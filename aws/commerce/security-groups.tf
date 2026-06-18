@@ -3,7 +3,7 @@
 # plus the two security groups that gate the traffic.
 #
 # Traffic path:
-#   internet --:80--> ALB (alb SG) --:8080--> Fargate task (task SG)
+#   internet --:80 (redirect)--> :443 (TLS) --> ALB (alb SG) --:8080--> Fargate task (task SG)
 #
 # VPC + subnets come from the platform-shared workspace via remote state, so
 # this workspace never hardcodes network IDs.
@@ -11,16 +11,25 @@
 
 # ----- Security groups -----------------------------------------------------
 
-# Public front door: anyone on the internet may reach the ALB on :80.
+# Public front door: anyone on the internet may reach the ALB on :80 (redirected
+# to HTTPS) and :443.
 resource "aws_security_group" "alb" {
   name        = "commerce-alb-sg"
-  description = "Allow inbound HTTP traffic from the internet"
+  description = "Allow inbound HTTP/HTTPS traffic from the internet"
   vpc_id      = data.terraform_remote_state.platform.outputs.vpc_id
 
   ingress {
-    description = "HTTP from anywhere"
+    description = "HTTP from anywhere (redirected to HTTPS)"
     from_port   = 80
     to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "HTTPS from anywhere"
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
@@ -94,12 +103,32 @@ resource "aws_lb_target_group" "commerce_api" {
   }
 }
 
-# HTTP listener on :80 forwarding to the target group. HTTPS:443 + an ACM cert
-# come later, once a final domain is chosen.
+# HTTP listener on :80 — 301-redirects everything to HTTPS so nothing stays
+# plain-text. No forward to the target group anymore.
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.commerce_alb.arn
   port              = "80"
   protocol          = "HTTP"
+
+  default_action {
+    type = "redirect"
+    redirect {
+      protocol    = "HTTPS"
+      port        = "443"
+      status_code = "HTTP_301"
+    }
+  }
+}
+
+# HTTPS listener on :443 — terminates TLS with the ACM cert (see dns-tls.tf) and
+# forwards to the target group. Uses the validated cert ARN so the listener
+# isn't created until the certificate is issued. Modern TLS policy.
+resource "aws_lb_listener" "https" {
+  load_balancer_arn = aws_lb.commerce_alb.arn
+  port              = "443"
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = aws_acm_certificate_validation.commerce.certificate_arn
 
   default_action {
     type             = "forward"
