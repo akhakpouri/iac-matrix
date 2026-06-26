@@ -39,13 +39,15 @@ variable "api_desired_count" {
 }
 
 # GitHub repo (<org>/<repo>) allowed to assume the CI role via OIDC. This is the
-# security boundary for CI auth — set it to the commerce-api app repo exactly.
+# security boundary for CI auth — set it to the commerce app repo exactly.
 # VERIFY this value; a wrong repo/owner either locks CI out or lets the wrong
-# repo in.
+# repo in. (Repo renamed commerce-api -> commerce 2026-06-26; the live trust
+# policy was updated out-of-band with an admin principal because the TFC
+# `terraform` user lacks iam:UpdateAssumeRolePolicy.)
 variable "github_repository" {
   description = "GitHub <org>/<repo> permitted to assume the commerce-ci role."
   type        = string
-  default     = "akhakpouri/commerce-api"
+  default     = "akhakpouri/commerce"
 }
 
 # Public hostname the API is served at (ACM cert subject + Route 53 record).
