@@ -44,3 +44,17 @@ output "ci_role_arn" {
   description = "ARN of the commerce-ci role for GitHub Actions OIDC."
   value       = aws_iam_role.ci.arn
 }
+
+# Event backbone (ADR-018). relay publishes here; local runs pick this up as
+# the SNS_TOPIC_ARN env var.
+output "domain_events_topic_arn" {
+  description = "ARN of the commerce-domain-events SNS topic."
+  value       = aws_sns_topic.domain_events.arn
+}
+
+# Used to `aws sqs receive-message` against directly while verifying the
+# relay -> SNS -> SQS path end to end (no notifier consumer exists yet).
+output "notifications_queue_url" {
+  description = "URL of the commerce-notifications-queue SQS queue."
+  value       = aws_sqs_queue.notifications.id
+}
