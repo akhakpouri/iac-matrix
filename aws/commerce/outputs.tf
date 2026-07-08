@@ -58,3 +58,16 @@ output "notifications_queue_url" {
   description = "URL of the commerce-notifications-queue SQS queue."
   value       = aws_sqs_queue.notifications.id
 }
+
+# Phase 1 interim relay credential (iam-relay.tf). Delete both outputs
+# alongside iam-relay.tf once relay gets an ECS task role (Phase 2).
+output "relay_local_access_key_id" {
+  description = "Access key ID for relay's interim local-dev IAM user."
+  value       = aws_iam_access_key.relay_local.id
+}
+
+output "relay_local_secret_access_key" {
+  description = "Secret access key for relay's interim local-dev IAM user."
+  value       = aws_iam_access_key.relay_local.secret
+  sensitive   = true
+}

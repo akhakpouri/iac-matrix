@@ -38,6 +38,7 @@ Goal: one ALB-fronted ECS Fargate service running the API container, with databa
 | Security groups  | `aws_security_group.alb` (inbound 80 + 443 from `0.0.0.0/0`); `aws_security_group.task` (inbound 8080 from the `alb` SG only). (`security-groups.tf`) |
 | Domain + TLS     | `aws_acm_certificate.commerce` (DNS-validated) for `commerce.godevmatrix.me` + validation records + `aws_route53_record.api` (alias A → ALB) in the hand-managed `godevmatrix.me` zone. (`dns-tls.tf`) |
 | IAM              | `aws_iam_role.task_execution` (managed `AmazonECSTaskExecutionRolePolicy` + inline `secretsmanager:GetSecretValue` on the DB secret) + `aws_iam_role.task` (empty). (`iam.tf`) |
+| Relay local credential (Phase 1, interim) | `aws_iam_user.relay_local` + inline `sns:Publish` policy scoped to the domain-events topic + `aws_iam_access_key.relay_local` — least-privilege identity for relay's local walking-skeleton runs, in place of the account's broad `sqs-manager`/`sns-manager` groups. Superseded by an ECS task role once relay is containerized (Phase 2); delete then. (`iam-relay.tf`) |
 | Logs             | `aws_cloudwatch_log_group` `/ecs/commerce-api` + `/ecs/commerce-utils`, 30-day retention; `awslogs` driver in both task defs. (`logs.tf`) |
 
 ### Still pending
@@ -45,6 +46,7 @@ Goal: one ALB-fronted ECS Fargate service running the API container, with databa
 - **First image push + bump `api_desired_count`** above 0. Until an image exists in `commerce-api-registry` the service has nothing to run.
 - **RDS SG ingress from the `task` SG.** Today RDS is still public, so the task reaches it over the internet; the SG-scoped path lands with ADR-004.
 - **CI OIDC role** for GitHub Actions (deferred). `task_execution_role_arn` is already exported for its future `iam:PassRole`.
+- **Relay containerization (Phase 2)** — replace `iam-relay.tf`'s interim IAM user with an ECS task role (same pattern as `aws_iam_role.task`), reusing `local.relay_publish_policy` verbatim; delete the Phase 1 user/key/outputs once the task role lands.
 
 ## Inputs the Go service expects
 
