@@ -67,3 +67,46 @@ resource "aws_sns_topic_subscription" "notifications" {
     event_type = ["OrderPlaced"]
   })
 }
+
+# Dead-letter queue for the payments consumer, same pattern as notifications_dlq.
+resource "aws_sqs_queue" "payments_dlq" {
+  name = "commerce-payments-dlq"
+}
+
+resource "aws_sqs_queue" "payments" {
+  name = "commerce-payments-queue"
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.payments_dlq.arn
+    maxReceiveCount     = 5
+  })
+}
+
+resource "aws_sqs_queue_policy" "payments_allow_sns" {
+  queue_url = aws_sqs_queue.payments.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "AllowSNSDelivery"
+      Effect    = "Allow"
+      Principal = { Service = "sns.amazonaws.com" }
+      Action    = "sqs:SendMessage"
+      Resource  = aws_sqs_queue.payments.arn
+      Condition = {
+        ArnEquals = { "aws:SourceArn" = aws_sns_topic.domain_events.arn }
+      }
+    }]
+  })
+}
+
+resource "aws_sns_topic_subscription" "payments" {
+  topic_arn            = aws_sns_topic.domain_events.arn
+  protocol             = "sqs"
+  endpoint             = aws_sqs_queue.payments.arn
+  raw_message_delivery = true
+
+  filter_policy = jsonencode({
+    event_type = ["PaymentProcessed"]
+  })
+}
