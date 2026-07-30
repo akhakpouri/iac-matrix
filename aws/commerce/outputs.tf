@@ -59,6 +59,13 @@ output "notifications_queue_url" {
   value       = aws_sqs_queue.notifications.id
 }
 
+# Used to `aws sqs receive-message` against directly while verifying the
+# relay -> SNS -> SQS path for PaymentProcessed events (no consumer exists yet).
+output "payments_queue_url" {
+  description = "URL of the commerce-payments-queue SQS queue."
+  value       = aws_sqs_queue.payments.id
+}
+
 # Phase 1 interim relay credential (iam-relay.tf). Delete both outputs
 # alongside iam-relay.tf once relay gets an ECS task role (Phase 2).
 output "relay_local_access_key_id" {

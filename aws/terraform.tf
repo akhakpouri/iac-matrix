@@ -6,7 +6,6 @@ terraform {
       project = "platform-shared"
       name    = "platform-shared"
     }
-
   }
   required_providers {
     aws = {
